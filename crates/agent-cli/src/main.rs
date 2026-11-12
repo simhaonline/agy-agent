@@ -73,6 +73,22 @@ enum Commands {
         /// Behavior preset for local gateway actions
         #[arg(long)]
         preset: Option<String>,
+        /// Automatically open the Web Dashboard in default browser
+        #[arg(long)]
+        open: bool,
+    },
+
+    /// Launch interactive Web UI Dashboard in default browser
+    Dashboard {
+        /// Port to bind the HTTP gateway server
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
+        /// Host address to bind
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Workspace root directory
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
     },
 
     /// AI Staffer delegation with specialized roles and git dirty-tree safety (agy-staff)
@@ -361,16 +377,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         },
 
-        Commands::Serve { port, host, workspace, preset: _ } => {
+        Commands::Serve { port, host, workspace, preset: _, open } => {
             let acc_path = AccountStore::default_path(&workspace);
             let store = AccountStore::load_from_path(&acc_path).unwrap_or_default();
             let audit = Arc::new(AuditLogger::new(&workspace));
             let cfg = GatewayConfig {
-                host,
+                host: host.clone(),
                 port,
                 workspace: workspace.clone(),
             };
             let server = GatewayServer::new(cfg, store, audit);
+
+            if open {
+                let url = format!("http://{}:{}/dashboard", host, port);
+                println!("Opening AGY Web Dashboard at {}", url);
+                #[cfg(target_os = "windows")]
+                let _ = std::process::Command::new("cmd").args(["/c", "start", &url]).spawn();
+                #[cfg(target_os = "macos")]
+                let _ = std::process::Command::new("open").arg(&url).spawn();
+                #[cfg(target_os = "linux")]
+                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+            }
+
+            server.run().await?;
+        }
+
+        Commands::Dashboard { port, host, workspace } => {
+            let acc_path = AccountStore::default_path(&workspace);
+            let store = AccountStore::load_from_path(&acc_path).unwrap_or_default();
+            let audit = Arc::new(AuditLogger::new(&workspace));
+            let cfg = GatewayConfig {
+                host: host.clone(),
+                port,
+                workspace: workspace.clone(),
+            };
+            let server = GatewayServer::new(cfg, store, audit);
+
+            let url = format!("http://{}:{}/dashboard", host, port);
+            println!("Launching AGY Web Dashboard at {}", url);
+            #[cfg(target_os = "windows")]
+            let _ = std::process::Command::new("cmd").args(["/c", "start", &url]).spawn();
+            #[cfg(target_os = "macos")]
+            let _ = std::process::Command::new("open").arg(&url).spawn();
+            #[cfg(target_os = "linux")]
+            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+
             server.run().await?;
         }
 

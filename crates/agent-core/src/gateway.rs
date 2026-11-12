@@ -56,6 +56,7 @@ impl GatewayServer {
 
         println!("AGY Universal API Gateway listening on http://{}", addr);
         println!("Endpoints:");
+        println!("  - Web Dashboard: GET http://{}/dashboard", addr);
         println!("  - OpenAI: POST http://{}/v1/chat/completions", addr);
         println!("  - Anthropic Claude: POST http://{}/v1/messages", addr);
         println!("  - Google Gemini: POST http://{}/v1beta/models/gemini-1.5-pro:generateContent", addr);
@@ -63,13 +64,16 @@ impl GatewayServer {
         println!("  - Health check: GET http://{}/health", addr);
         println!("  - Telemetry: GET http://{}/status", addr);
 
+        let config_arc = Arc::new(self.config.clone());
+
         loop {
             match listener.accept().await {
                 Ok((stream, client_addr)) => {
                     let accounts = Arc::clone(&self.accounts);
                     let audit = Arc::clone(&self.audit);
+                    let config = Arc::clone(&config_arc);
                     tokio::spawn(async move {
-                        if let Err(e) = handle_http_stream(stream, accounts, audit, client_addr).await {
+                        if let Err(e) = handle_http_stream(stream, accounts, audit, config, client_addr).await {
                             eprintln!("Error handling connection from {}: {}", client_addr, e);
                         }
                     });
@@ -86,6 +90,7 @@ async fn handle_http_stream(
     mut stream: TcpStream,
     accounts: Arc<RwLock<AccountStore>>,
     audit: Arc<AuditLogger>,
+    config: Arc<GatewayConfig>,
     _client_addr: SocketAddr,
 ) -> Result<(), CommonError> {
     let mut buffer = Vec::with_capacity(8192);
@@ -167,9 +172,96 @@ async fn handle_http_stream(
         return Ok(());
     }
 
+    // Serve HTML Web Dashboard
+    if (path == "/" || path == "/dashboard") && method == "GET" {
+        let html = include_str!("dashboard.html");
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\n\
+             Content-Type: text/html; charset=utf-8\r\n\
+             Access-Control-Allow-Origin: *\r\n\
+             Content-Length: {}\r\n\
+             Connection: close\r\n\r\n{}",
+            html.len(),
+            html
+        );
+        stream
+            .write_all(resp.as_bytes())
+            .await
+            .map_err(|e| CommonError::Generic(e.to_string()))?;
+        return Ok(());
+    }
+
     // Route requests
-    let (status_code, body_json) = if path == "/health" || path == "/" {
+    let (status_code, body_json) = if path == "/health" {
         (200, json!({ "status": "ok", "service": "agy-gateway", "version": "0.1.0" }))
+    } else if path == "/api/accounts" && method == "GET" {
+        let store = accounts.read().await;
+        (200, json!(store.list_accounts()))
+    } else if path == "/api/accounts" && method == "POST" {
+        let val: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
+        let name = val["name"].as_str().unwrap_or("Account").to_string();
+        let provider = val["provider"].as_str().unwrap_or("openai").to_string();
+        let key = val["key"].as_str().unwrap_or("").to_string();
+        let model = val["model"].as_str().map(|s| s.to_string());
+        let url = val["url"].as_str().map(|s| s.to_string());
+        let quota = val["quota"].as_u64();
+        let profile = crate::account::AccountProfile::new(name, provider, key, url, model, quota);
+        let mut store = accounts.write().await;
+        match store.add_account(profile) {
+            Ok(_) => {
+                let acc_path = crate::account::AccountStore::default_path(&config.workspace);
+                let _ = store.save_to_path(&acc_path);
+                (200, json!({ "status": "ok", "message": "Account registered" }))
+            }
+            Err(e) => (400, json!({ "error": e.to_string() })),
+        }
+    } else if path == "/api/accounts/switch" && method == "POST" {
+        let val: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
+        let id_or_name = val["id_or_name"].as_str().unwrap_or("");
+        let mut store = accounts.write().await;
+        match store.switch_active(id_or_name) {
+            Ok(_) => {
+                let acc_path = crate::account::AccountStore::default_path(&config.workspace);
+                let _ = store.save_to_path(&acc_path);
+                (200, json!({ "status": "ok", "message": format!("Switched to {}", id_or_name) }))
+            }
+            Err(e) => (400, json!({ "error": e.to_string() })),
+        }
+    } else if path == "/api/accounts/delete" && method == "POST" {
+        let val: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
+        let id_or_name = val["id_or_name"].as_str().unwrap_or("");
+        let mut store = accounts.write().await;
+        match store.remove_account(id_or_name) {
+            Ok(rem) => {
+                let acc_path = crate::account::AccountStore::default_path(&config.workspace);
+                let _ = store.save_to_path(&acc_path);
+                (200, json!({ "status": "ok", "message": format!("Removed {}", rem.name) }))
+            }
+            Err(e) => (400, json!({ "error": e.to_string() })),
+        }
+    } else if path == "/api/client" && method == "GET" {
+        let report = crate::manager::ClientManager::inspect_environment(Some(config.port));
+        (200, json!(report))
+    } else if path == "/api/audit" && method == "GET" {
+        let events = audit.read_events().unwrap_or_default();
+        (200, json!(events))
+    } else if path == "/api/chat" && method == "POST" {
+        let val: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
+        let prompt = val["prompt"].as_str().unwrap_or("Hello");
+        let req = CompletionRequest {
+            model: "gpt-4o".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+                tool_calls: None,
+            }],
+            temperature: Some(0.7),
+            max_tokens: Some(2048),
+        };
+        match execute_with_account_failover(&req, &accounts, &audit).await {
+            Ok((content, tokens)) => (200, json!({ "response": content, "tokens": tokens })),
+            Err((status, msg)) => (status, json!({ "error": { "message": msg } })),
+        }
     } else if path == "/status" || path == "/v1/status" {
         let store = accounts.read().await;
         let total = store.list_accounts().len();

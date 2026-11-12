@@ -281,6 +281,26 @@ flowchart LR
     agy-agent client status
     ```
 
+13. **Embedded Web UI/UX Dashboard (`dashboard` & `serve --open`):**
+    Launch the full-featured, local browser dashboard for real-time monitoring and control:
+    ```bash
+    # Open dashboard directly in default web browser
+    agy-agent dashboard
+
+    # Run on custom port/host
+    agy-agent dashboard --port 8080 --host 127.0.0.1
+
+    # Start gateway with browser dashboard auto-launch
+    agy-agent serve --open
+    ```
+    The Web UI/UX provides:
+    - **Live System Cards:** Active model/provider display, request counts, errors, quota utilization %, and 429 cooling indicators.
+    - **Multi-Account Manager:** Visual card deck of all registered providers. Switch active keys in 1 click, track token budgets with progress bars, and add new providers via modal dialog.
+    - **Host Client Diagnostics:** Automatic detection of installed AGY/Antigravity host installations, executable paths, detected versions, running PIDs, and live port reachability.
+    - **AI Staff Playground:** Interactive browser chat with companion role switcher (`Ask`, `Researcher`, `Reviewer`, `Implementer`) and security presets.
+    - **Tamper-Evident Audit Feed:** Streaming event viewer of `.agy/audit.jsonl` with timestamped tool calls and automated credential redaction.
+    - **Quick Connect Snippets:** One-click copy configs for Cursor, Cline, Continue, Aider, Python, and curl.
+
 ---
 
 ## 4. Behavior & Permission Presets Deep Dive

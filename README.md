@@ -422,6 +422,28 @@ agy-agent client status
 agy-agent client status --port 8080
 ```
 
+#### 13. Interactive Web UI/UX Dashboard (`dashboard` & `serve --open`)
+Access the modern, dark glassmorphic web dashboard directly in your browser. Seamlessly integrates Multi-Account switching, Gateway status, Host Client process telemetry, AI Staff companion playground, and live tamper-evident audit streaming:
+```bash
+# Launch dashboard server and automatically open your default browser
+agy-agent dashboard
+
+# Bind dashboard to custom port
+agy-agent dashboard --port 8080 --host 127.0.0.1
+
+# Alternatively start the gateway server with automatic browser launch
+agy-agent serve --open
+```
+
+**Dashboard Features & User Experience:**
+- 🎛️ **Live System Overview:** Instant status cards for active provider/model, quota usage %, active cooling status, and client detection.
+- 👥 **Multi-Account Manager:** Visual cards for every registered provider (OpenAI, Claude, Gemini, DeepSeek, Ollama). Switch active account with 1 click, track token usage bars, or add new keys via modal dialog.
+- 🛡️ **Host Client & Process Inspector:** Detects local AGY client installation, parses version info, displays active process PIDs, and live gateway port connectivity.
+- 🤖 **Interactive AI Staff Companion:** Direct in-browser chat playground with instant role selection (`Ask`, `Researcher`, `Reviewer`, `Implementer`) and behavior presets (`Aggressive`, `Heretic`, `Uncensored`, `Unrestricted`, `Abliterated`, `Unleashed`).
+- 📜 **Tamper-Evident Audit Feed:** Real-time stream of `.agy/audit.jsonl` events showing exact timestamps, tools called, redacted secrets, and execution results.
+- 🔌 **Instant IDE Connect Snippets:** Ready-to-copy configuration snippets for Cursor (`~/.cursor/settings.json`), Cline, Continue, Aider, Python SDK, and curl.
+- ⚡ **Zero External Dependencies:** Built with pure Rust single-binary embedding (`include_str!`). No NodeJS, npm, webpack, or static asset directories required.
+
 ---
 
 ### Built-In Tool Registry
