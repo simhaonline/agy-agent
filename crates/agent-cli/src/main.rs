@@ -23,8 +23,8 @@ enum Commands {
         /// Optional initial prompt
         prompt: Option<String>,
         /// Named behavior and permission preset
-        #[arg(short, long, default_value = "Uncensored")]
-        preset: String,
+        #[arg(short, long)]
+        preset: Option<String>,
         /// Workspace root directory
         #[arg(short, long, default_value = ".")]
         workspace: PathBuf,
@@ -38,8 +38,8 @@ enum Commands {
         /// Task prompt / goal to execute
         prompt: String,
         /// Named behavior and permission preset
-        #[arg(short, long, default_value = "Aggressive")]
-        preset: String,
+        #[arg(short, long)]
+        preset: Option<String>,
         /// Workspace root directory
         #[arg(short, long, default_value = ".")]
         workspace: PathBuf,
@@ -194,6 +194,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _p = AgentPreset::parse(&name).ok_or_else(|| {
                     format!("Unknown preset '{}'", name)
                 })?;
+                let agy_dir = Path::new(".agy");
+                if !agy_dir.exists() {
+                    let _ = std::fs::create_dir_all(agy_dir);
+                }
+                let cfg_path = agy_dir.join("config.json");
+                let mut config: serde_json::Value = if cfg_path.exists() {
+                    std::fs::read_to_string(&cfg_path)
+                        .ok()
+                        .and_then(|s| serde_json::from_str(&s).ok())
+                        .unwrap_or_else(|| serde_json::json!({}))
+                } else {
+                    serde_json::json!({})
+                };
+                config["default_preset"] = serde_json::Value::String(name.clone());
+                if let Ok(serialized) = serde_json::to_string_pretty(&config) {
+                    let _ = std::fs::write(&cfg_path, serialized);
+                }
                 println!("[OK] Workspace preset switched to '{}'.", name);
             }
         },
@@ -289,16 +306,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::Run { prompt, preset, workspace, json } => {
-            let p = AgentPreset::parse(&preset).ok_or_else(|| format!("Unknown preset: {}", preset))?;
+            let preset_name = resolve_preset(preset, &workspace, "Aggressive");
+            let p = AgentPreset::parse(&preset_name).ok_or_else(|| format!("Unknown preset: {}", preset_name))?;
             let runner = AgentRunner::new(&workspace, p);
             let sm = SessionManager::new(&workspace);
             let session = sm.create_session("AutoRun", p)?;
 
-            let provider = if std::env::var("OPENAI_API_KEY").is_ok() {
-                Box::new(OpenAiCompatibleProvider::from_env(None, None)) as Box<dyn Provider>
-            } else {
-                Box::new(MockProvider::new("")) as Box<dyn Provider>
-            };
+            let provider = resolve_provider(&workspace);
 
             let result = runner.run_task(&session.id, &prompt, provider.as_ref())?;
 
@@ -319,7 +333,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::Chat { prompt, preset, workspace, session } => {
-            let p = AgentPreset::parse(&preset).ok_or_else(|| format!("Unknown preset: {}", preset))?;
+            let preset_name = resolve_preset(preset, &workspace, "Uncensored");
+            let p = AgentPreset::parse(&preset_name).ok_or_else(|| format!("Unknown preset: {}", preset_name))?;
             let runner = AgentRunner::new(&workspace, p);
             let sm = SessionManager::new(&workspace);
 
@@ -329,11 +344,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 sm.create_session("InteractiveChat", p)?
             };
 
-            let provider = if std::env::var("OPENAI_API_KEY").is_ok() {
-                Box::new(OpenAiCompatibleProvider::from_env(None, None)) as Box<dyn Provider>
-            } else {
-                Box::new(MockProvider::new("")) as Box<dyn Provider>
-            };
+            let provider = resolve_provider(&workspace);
 
             println!("============================================================");
             println!("AGY Standalone Agent Interactive REPL");
@@ -375,6 +386,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn resolve_preset(cli_preset: Option<String>, workspace: &Path, fallback: &str) -> String {
+    if let Some(p) = cli_preset {
+        return p;
+    }
+    if let Ok(env_p) = std::env::var("AGY_PRESET") {
+        return env_p;
+    }
+    let cfg_path = workspace.join(".agy").join("config.json");
+    if cfg_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(dp) = val.get("default_preset").and_then(|v| v.as_str()) {
+                    return dp.to_string();
+                }
+            }
+        }
+    }
+    fallback.to_string()
+}
+
+fn resolve_provider(workspace: &Path) -> Box<dyn Provider> {
+    let cfg_path = workspace.join(".agy").join("config.json");
+    let mut file_url = None;
+    let mut file_key = None;
+    let mut file_model = None;
+
+    if cfg_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&cfg_path) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(prov) = val.get("provider") {
+                    file_url = prov.get("base_url").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    file_key = prov.get("api_key").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    file_model = prov.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
+                }
+            }
+        }
+    }
+
+    let env_key = std::env::var("OPENAI_API_KEY").ok();
+    let env_url = std::env::var("OPENAI_BASE_URL").ok();
+    let env_model = std::env::var("AGY_MODEL").ok().or_else(|| std::env::var("OPENAI_MODEL").ok());
+
+    let final_key = env_key.or(file_key);
+    let final_url = env_url.or(file_url);
+    let final_model = env_model.or(file_model);
+
+    if final_key.is_some() || final_url.is_some() {
+        let key = final_key.unwrap_or_else(|| "ollama".to_string());
+        let url = final_url.unwrap_or_else(|| "http://localhost:11434/v1".to_string());
+        let model = final_model.unwrap_or_else(|| "gpt-4o".to_string());
+        Box::new(OpenAiCompatibleProvider {
+            base_url: url,
+            api_key: key,
+            default_model: model,
+        }) as Box<dyn Provider>
+    } else {
+        Box::new(MockProvider::new("")) as Box<dyn Provider>
+    }
 }
 
 fn which_check(tool: &str) -> bool {

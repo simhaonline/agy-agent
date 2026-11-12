@@ -56,9 +56,14 @@ irm https://raw.githubusercontent.com/simhaonline/agy-agent/main/install.ps1 | i
   - [The Six Named Presets](#the-six-named-presets)
   - [16-Dimension Effective Policy Matrix](#16-dimension-effective-policy-matrix)
   - [Non-Bypassable Security Boundaries](#non-bypassable-security-boundaries)
-- [6. Configuration & Environment](#6-configuration--environment)
+- [6. AI Model Provider Integration](#6-ai-model-provider-integration)
+  - [Universal OpenAI-Compatible Architecture](#universal-openai-compatible-architecture)
+  - [Local & Private AI (Ollama, vLLM, LM Studio)](#local--private-ai-ollama-vllm-lm-studio)
+  - [Commercial Cloud AI (OpenAI, OpenRouter, DeepSeek, Groq, Mistral)](#commercial-cloud-ai-openai-openrouter-deepseek-groq-mistral)
+  - [Enterprise Gateways (LiteLLM Proxy)](#enterprise-gateways-litellm-proxy)
   - [Configuration File (`.agy/config.json`)](#configuration-file-agyconfigjson)
-  - [Environment Variables](#environment-variables)
+  - [Environment Variables & CLI Overrides](#environment-variables--cli-overrides)
+  - [Preset & Model Alignment Guide](#preset--model-alignment-guide)
   - [Persistent Memory (`.agy/memory.json`)](#persistent-memory-agymemoryjson)
   - [Tamper-Evident Audit Log (`.agy/audit.jsonl`)](#tamper-evident-audit-log-agyauditjsonl)
 - [7. 104-Rule Engine & Synthetic Oracle Parity](#7-104-rule-engine--synthetic-oracle-parity)
@@ -425,41 +430,302 @@ No preset, system prompt, or instruction can override these six universal invari
 
 ---
 
-## 6. Configuration & Environment
+## 6. AI Model Provider Integration
 
-### Configuration File (`.agy/config.json`)
+`agy-agent` features an open, model-agnostic provider layer. By implementing the industry-standard OpenAI Chat Completions protocol (`/chat/completions`), it connects seamlessly to any local, self-hosted, cloud-hosted, or proxy AI endpoint.
 
-Place an optional `.agy/config.json` file in your workspace root to configure provider endpoints, models, and defaults:
+```
+                          +------------------------+
+                          |       agy-agent        |
+                          +-----------+------------+
+                                      |
+         +----------------------------+----------------------------+
+         |                            |                            |
++--------v---------+         +--------v---------+         +--------v---------+
+| Local & Private  |         | Commercial Cloud |         | Enterprise Proxy |
++------------------+         +------------------+         +------------------+
+| • Ollama         |         | • OpenAI         |         | • LiteLLM Proxy  |
+| • vLLM           |         | • OpenRouter     |         | • Virtual Keys   |
+| • LM Studio      |         | • DeepSeek       |         | • Multi-Model    |
+| • LocalAI        |         | • Groq           |         | • Spend Tracking |
+| • llama.cpp      |         | • Mistral AI     |         | • Failover Teams |
++------------------+         +------------------+         +------------------+
+```
 
+### Universal OpenAI-Compatible Architecture
+
+All providers communicate over HTTP/HTTPS with standard JSON payloads:
+- **Streaming & Non-Streaming Completions**
+- **Structured Tool Calling (`tool_calls` schema)**
+- **System Instructions & Multi-Turn Message Arrays**
+- **Automatic High-Entropy Secret Masking (`sk-...` -> `[REDACTED_API_KEY]`)**
+
+---
+
+### Local & Private AI (Ollama, vLLM, LM Studio)
+
+Run 100% offline, air-gapped coding sessions with zero telemetry and zero external API fees.
+
+#### 1. Ollama (Recommended for Local Workstations)
+Install Ollama and pull your preferred coding model:
+```bash
+# Pull high-performance coding models
+ollama run qwen2.5-coder:32b
+# or: ollama run deepseek-coder-v2
+# or: ollama run llama3.3:70b
+```
+
+**Configure in `.agy/config.json`:**
+```json
+{
+  "default_preset": "Unrestricted",
+  "provider": {
+    "type": "openai",
+    "base_url": "http://localhost:11434/v1",
+    "api_key": "ollama",
+    "model": "qwen2.5-coder:32b",
+    "timeout_seconds": 120
+  }
+}
+```
+
+**Or launch on the fly using Environment Variables:**
+```bash
+# Linux / macOS
+export OPENAI_BASE_URL="http://localhost:11434/v1"
+export OPENAI_API_KEY="ollama"
+export AGY_MODEL="qwen2.5-coder:32b"
+agy-agent chat
+
+# Windows PowerShell
+$env:OPENAI_BASE_URL = "http://localhost:11434/v1"
+$env:OPENAI_API_KEY = "ollama"
+$env:AGY_MODEL = "qwen2.5-coder:32b"
+agy-agent chat
+```
+
+#### 2. vLLM (High-Throughput Multi-GPU Servers)
+Launch the vLLM OpenAI-compatible server:
+```bash
+python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-Coder-32B-Instruct \
+  --port 8000 \
+  --api-key secret-vllm-key
+```
+
+**Configure in `.agy/config.json`:**
+```json
+{
+  "default_preset": "Aggressive",
+  "provider": {
+    "type": "openai",
+    "base_url": "http://localhost:8000/v1",
+    "api_key": "secret-vllm-key",
+    "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+    "timeout_seconds": 90
+  }
+}
+```
+
+#### 3. LM Studio / LocalAI
+Start local inference in LM Studio and enable the Local Server (port 1234):
+```json
+{
+  "default_preset": "Uncensored",
+  "provider": {
+    "type": "openai",
+    "base_url": "http://localhost:1234/v1",
+    "api_key": "lm-studio",
+    "model": "local-model",
+    "timeout_seconds": 90
+  }
+}
+```
+
+---
+
+### Commercial Cloud AI (OpenAI, OpenRouter, DeepSeek, Groq, Mistral)
+
+Connect to frontier cloud models with high reasoning power.
+
+#### 1. OpenRouter (Unified Multi-Model Gateway)
+Access Anthropic Claude 3.5 Sonnet, DeepSeek R1, OpenAI o1, Meta Llama 3.3, and Google Gemini with a single API key:
+
+**Configure in `.agy/config.json`:**
+```json
+{
+  "default_preset": "Aggressive",
+  "provider": {
+    "type": "openai",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key": "sk-or-v1-your-key-here",
+    "model": "anthropic/claude-3.5-sonnet",
+    "timeout_seconds": 60
+  }
+}
+```
+*Popular OpenRouter models:*
+- `anthropic/claude-3.5-sonnet` (Frontier coding and architectural planning)
+- `deepseek/deepseek-r1` (Open-weights reasoning)
+- `meta-llama/llama-3.3-70b-instruct` (Fast open-weights instruction following)
+- `google/gemini-2.0-flash-exp:free` (High-speed multimodal)
+
+#### 2. OpenAI (Direct)
+**Configure in `.agy/config.json`:**
 ```json
 {
   "default_preset": "Aggressive",
   "provider": {
     "type": "openai",
     "base_url": "https://api.openai.com/v1",
-    "api_key": "sk-your-api-key-here",
+    "api_key": "sk-proj-your-openai-key",
     "model": "gpt-4o",
     "timeout_seconds": 60
-  },
-  "workspace_root": ".",
-  "auto_approve": false
+  }
+}
+```
+*Supported OpenAI models:* `gpt-4o`, `gpt-4o-mini`, `o1`, `o1-mini`, `o3-mini`.
+
+#### 3. DeepSeek API (Direct)
+Direct high-performance inference at low API cost:
+```json
+{
+  "default_preset": "Aggressive",
+  "provider": {
+    "type": "openai",
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "sk-your-deepseek-key",
+    "model": "deepseek-chat",
+    "timeout_seconds": 90
+  }
+}
+```
+*Models:* `deepseek-chat` (DeepSeek-V3), `deepseek-reasoner` (DeepSeek-R1).
+
+#### 4. Groq (Ultra-Low Latency Inference)
+Harness Groq LPU hardware for near-instant responses:
+```json
+{
+  "default_preset": "Aggressive",
+  "provider": {
+    "type": "openai",
+    "base_url": "https://api.groq.com/openai/v1",
+    "api_key": "gsk_your-groq-key",
+    "model": "llama-3.3-70b-versatile",
+    "timeout_seconds": 30
+  }
 }
 ```
 
-To validate your configuration:
+#### 5. Mistral AI
+High-efficiency European frontier models:
+```json
+{
+  "default_preset": "Aggressive",
+  "provider": {
+    "type": "openai",
+    "base_url": "https://api.mistral.ai/v1",
+    "api_key": "your-mistral-api-key",
+    "model": "codestral-latest",
+    "timeout_seconds": 60
+  }
+}
+```
+
+---
+
+### Enterprise Gateways (LiteLLM Proxy)
+
+In enterprise setups, route requests through a central [LiteLLM Proxy](https://docs.litellm.ai/) for team spend tracking, rate-limiting, and automatic fallback:
+
+```json
+{
+  "default_preset": "Unrestricted",
+  "provider": {
+    "type": "openai",
+    "base_url": "http://litellm-proxy.corp.internal:4000/v1",
+    "api_key": "sk-team-marketing-budget-key",
+    "model": "claude-3-5-sonnet",
+    "timeout_seconds": 60
+  }
+}
+```
+
+---
+
+### Configuration File (`.agy/config.json`)
+
+`agy-agent` automatically loads `.agy/config.json` from the current workspace root.
+
+```json
+{
+  "version": 1,
+  "default_preset": "Aggressive",
+  "workspace_root": ".",
+  "auto_approve": false,
+  "provider": {
+    "type": "openai",
+    "base_url": "https://api.openai.com/v1",
+    "api_key": "sk-your-key-here",
+    "model": "gpt-4o",
+    "temperature": 0.2,
+    "max_tokens": 4096,
+    "timeout_seconds": 60
+  },
+  "rate_limiting": {
+    "max_requests_per_minute": 60,
+    "max_tokens_per_minute": 150000
+  },
+  "audit": {
+    "enabled": true,
+    "log_path": ".agy/audit.jsonl",
+    "redact_secrets": true
+  }
+}
+```
+
+Validate your configuration at any time:
 ```bash
 agy-agent config validate
 ```
 
-### Environment Variables
+---
 
-| Variable | Description | Default |
-|---|---|---|
-| `OPENAI_API_KEY` | API key for OpenAI-compatible model provider | `""` (runs offline fallback) |
-| `OPENAI_BASE_URL` | Base URL for LLM provider (supports Ollama, vLLM, LocalAI) | `https://api.openai.com/v1` |
-| `AGY_MODEL` | Default model identifier | `gpt-4o` |
-| `AGY_PRESET` | Default preset override | `Aggressive` |
-| `AGY_WORKSPACE` | Default workspace root path | `.` |
+### Environment Variables & CLI Overrides
+
+Configuration parameters can be overridden per session without editing files:
+
+| Environment Variable | CLI Flag Equivalent | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `OPENAI_API_KEY` | *(via prompt)* | API authentication token | `""` (mock fallback) |
+| `OPENAI_BASE_URL` | `--base-url <url>` | Endpoint base URL | `https://api.openai.com/v1` |
+| `AGY_MODEL` | `--model <model>` | Model identifier | `gpt-4o` |
+| `AGY_PRESET` | `--preset <name>` | Behavior & permission preset | `Aggressive` |
+| `AGY_WORKSPACE` | `--workspace <path>`| Active workspace root directory | `.` |
+| `AGY_CONFIG_PATH` | `--config <file>` | Path to master configuration file | `.agy/config.json` |
+
+#### Quick Examples:
+```bash
+# Run one task using local Ollama model without changing config file:
+OPENAI_BASE_URL="http://localhost:11434/v1" OPENAI_API_KEY="ollama" agy-agent run "Refactor error handling" --model qwen2.5-coder:32b
+
+# Run interactive chat using DeepSeek via OpenRouter under Unleashed preset:
+OPENAI_BASE_URL="https://openrouter.ai/api/v1" OPENAI_API_KEY="sk-or-..." agy-agent chat --model deepseek/deepseek-r1 --preset Unleashed
+```
+
+---
+
+### Preset & Model Alignment Guide
+
+Understanding how presets interact with different AI models is essential for security and productivity:
+
+| Combination | Effective Experience | Recommended Use Case |
+| :--- | :--- | :--- |
+| **Local Uncensored Model** (e.g. `qwen2.5-coder` on Ollama) + `Uncensored` or `Unrestricted` Preset | **Zero-Friction Autonomy**: No client-side refusal layer, no server-side refusal layer. Fast, unrestricted local refactoring inside your workspace. | Private offline codebases, security auditing, internal legacy transformations. |
+| **Cloud Frontier Model** (e.g. `claude-3.5-sonnet` or `gpt-4o`) + `Aggressive` Preset | **High-Reasoning Production Engineering**: Model performs deep multi-step planning, automated retries, and comprehensive unit tests within safe boundaries. | Production code refactoring, complex feature development, CI/CD pipeline verification. |
+| **Reasoning Model** (e.g. `deepseek-r1` or `o1`) + `Heretic` Preset | **Direct Technical Architect**: Model outputs pure technical logic and architectural tradeoffs with minimal conversational pleasantries. | Code reviews, formal verification, algorithm design. |
+
+---
 
 ### Persistent Memory (`.agy/memory.json`)
 
@@ -467,10 +733,10 @@ The agent maintains persistent factual memory across sessions in `.agy/memory.js
 
 ### Tamper-Evident Audit Log (`.agy/audit.jsonl`)
 
-Every action taken by the agent is recorded in JSON Lines format:
+Every action taken by the agent is recorded in append-only JSON Lines format:
 ```json
-{"timestamp":"2026-11-11T14:53:11Z","preset":"Aggressive","event":"tool_invocation","details":{"tool":"file_read","args":{"path":"Cargo.toml"}}}
-{"timestamp":"2026-11-11T14:53:11Z","preset":"Aggressive","event":"tool_completed","details":{"tool":"file_read","success":true}}
+{"timestamp":"2026-11-12T13:40:11Z","preset":"Aggressive","event":"tool_invocation","details":{"tool":"file_read","args":{"path":"Cargo.toml"}}}
+{"timestamp":"2026-11-12T13:40:11Z","preset":"Aggressive","event":"tool_completed","details":{"tool":"file_read","success":true}}
 ```
 
 ---

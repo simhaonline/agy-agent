@@ -100,8 +100,13 @@ pub struct OpenAiCompatibleProvider {
 impl OpenAiCompatibleProvider {
     pub fn from_env(base_url: Option<String>, default_model: Option<String>) -> Self {
         let key = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| "mock-key".to_string());
-        let url = base_url.unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-        let model = default_model.unwrap_or_else(|| "gpt-4o".to_string());
+        let url = base_url
+            .or_else(|| std::env::var("OPENAI_BASE_URL").ok())
+            .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+        let model = default_model
+            .or_else(|| std::env::var("AGY_MODEL").ok())
+            .or_else(|| std::env::var("OPENAI_MODEL").ok())
+            .unwrap_or_else(|| "gpt-4o".to_string());
         OpenAiCompatibleProvider {
             base_url: url,
             api_key: key,
@@ -122,7 +127,7 @@ impl Provider for OpenAiCompatibleProvider {
         };
 
         // When offline or invalid key, return graceful fallback or error
-        if self.api_key == "mock-key" {
+        if self.api_key == "mock-key" && self.base_url == "https://api.openai.com/v1" {
             return Ok(CompletionResponse {
                 content: format!("[Local Fallback] Processed message with model {}", req.model),
                 tool_calls: Vec::new(),
@@ -130,10 +135,16 @@ impl Provider for OpenAiCompatibleProvider {
             });
         }
 
+        let model_to_use = if (req.model.is_empty() || req.model == "gpt-4o") && !self.default_model.is_empty() {
+            &self.default_model
+        } else {
+            &req.model
+        };
+
         // Real endpoint call via reqwest blocking or tokio
         let client = reqwest::blocking::Client::new();
         let payload = serde_json::json!({
-            "model": req.model,
+            "model": model_to_use,
             "messages": req.messages,
             "temperature": req.temperature.unwrap_or(0.7)
         });
