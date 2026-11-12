@@ -1,0 +1,7 @@
+/target/
+.agy/
+*.original
+patch_report.json
+**/*.rs.bk
+test_binary/
+

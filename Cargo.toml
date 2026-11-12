@@ -1,0 +1,43 @@
+[workspace]
+members = [
+    "crates/common",
+    "crates/patcher-core",
+    "crates/patcher-cli",
+    "crates/policy",
+    "crates/tools",
+    "crates/providers",
+    "crates/session",
+    "crates/agent-core",
+    "crates/agent-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["AGY Contributors"]
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+clap = { version = "4.5", features = ["derive", "cargo"] }
+sha2 = "0.10"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+regex = "1.10"
+thiserror = "1.0"
+tokio = { version = "1.40", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+tempfile = "3.12"
+
+# Internal crates
+common = { path = "crates/common" }
+patcher-core = { path = "crates/patcher-core" }
+policy = { path = "crates/policy" }
+tools = { path = "crates/tools" }
+providers = { path = "crates/providers" }
+session = { path = "crates/session" }
+agent-core = { path = "crates/agent-core" }
