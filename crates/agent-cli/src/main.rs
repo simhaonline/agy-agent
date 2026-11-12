@@ -1,11 +1,16 @@
 use clap::{Parser, Subcommand};
+use agent_core::account::{AccountProfile, AccountStore};
 use agent_core::audit::AuditLogger;
+use agent_core::gateway::{GatewayConfig, GatewayServer};
+use agent_core::manager::ClientManager;
 use agent_core::runner::AgentRunner;
+use agent_core::staff::StaffRunner;
 use policy::preset::AgentPreset;
 use providers::{MockProvider, OpenAiCompatibleProvider, Provider};
 use session::session::SessionManager;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tools::registry::ToolRegistry;
 
 #[derive(Parser)]
@@ -48,6 +53,40 @@ enum Commands {
         json: bool,
     },
 
+    /// Manage multi-provider accounts, quotas, and 429 cooling (agy-switch)
+    Account {
+        #[command(subcommand)]
+        sub: AccountCommands,
+    },
+
+    /// Start universal local API gateway for OpenAI, Claude, and Gemini formats (agy2api)
+    Serve {
+        /// Port to bind the HTTP gateway server
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
+        /// Host address to bind
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Workspace root directory
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+        /// Behavior preset for local gateway actions
+        #[arg(long)]
+        preset: Option<String>,
+    },
+
+    /// AI Staffer delegation with specialized roles and git dirty-tree safety (agy-staff)
+    Staff {
+        #[command(subcommand)]
+        sub: StaffCommands,
+    },
+
+    /// Detect AGY/Antigravity client installations and running processes (AntigravityManager)
+    Client {
+        #[command(subcommand)]
+        sub: ClientCommands,
+    },
+
     /// Manage behavior and permission presets
     Preset {
         #[command(subcommand)]
@@ -88,6 +127,108 @@ enum Commands {
         /// Limit number of events shown
         #[arg(short, long, default_value_t = 20)]
         limit: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum AccountCommands {
+    /// List all configured accounts
+    List {
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Add a new account profile
+    Add {
+        /// Account name or nickname
+        #[arg(short, long)]
+        name: String,
+        /// Provider type (openai, claude, gemini, deepseek, ollama, etc.)
+        #[arg(short, long)]
+        provider: String,
+        /// Secret API key
+        #[arg(short, long)]
+        key: String,
+        /// Custom API base URL
+        #[arg(long)]
+        url: Option<String>,
+        /// Default model name
+        #[arg(short, long)]
+        model: Option<String>,
+        /// Optional token quota limit
+        #[arg(short, long)]
+        quota: Option<u64>,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Switch active account
+    Switch {
+        /// Account ID or name
+        id_or_name: String,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Remove an account
+    Remove {
+        /// Account ID or name
+        id_or_name: String,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Show quota and token usage breakdown
+    Quota {
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum StaffCommands {
+    /// Ad-hoc technical questions answered by staff companion
+    Ask {
+        question: String,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+        #[arg(short, long)]
+        preset: Option<String>,
+    },
+    /// Read-only codebase research and architecture investigation
+    Research {
+        topic: String,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+        #[arg(short, long)]
+        preset: Option<String>,
+    },
+    /// Review git diff or target file for correctness, security, and bugs
+    Review {
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+        #[arg(short, long)]
+        preset: Option<String>,
+    },
+    /// Autonomous code implementation with mandatory git dirty-tree safety
+    Implement {
+        task: String,
+        /// Override refusal if git working tree contains uncommitted changes
+        #[arg(short, long)]
+        force: bool,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+        #[arg(short, long)]
+        preset: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ClientCommands {
+    /// Detect installed AGY / Antigravity client binaries on host system
+    Detect,
+    /// Inspect running client processes and local gateway connection status
+    Status {
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
     },
 }
 
@@ -148,6 +289,184 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Account { sub } => match sub {
+            AccountCommands::List { workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let store = AccountStore::load_from_path(&acc_path)?;
+                let accounts = store.list_accounts();
+                if accounts.is_empty() {
+                    println!("No accounts configured. Use 'agy-agent account add' to register an account.");
+                } else {
+                    println!("=========================================================================================");
+                    println!("{:<16} {:<12} {:<18} {:<8} {:<10} {:<16}", "NAME", "PROVIDER", "MODEL", "ACTIVE", "COOLING", "KEY");
+                    println!("-----------------------------------------------------------------------------------------");
+                    for a in accounts {
+                        let active_str = if a.is_active { "[ACTIVE]" } else { " " };
+                        let cooling_str = if a.is_cooling() { "[COOLING]" } else { "Ready" };
+                        let model_str = a.model.as_deref().unwrap_or("default");
+                        println!(
+                            "{:<16} {:<12} {:<18} {:<8} {:<10} {:<16}",
+                            a.name,
+                            a.provider,
+                            model_str,
+                            active_str,
+                            cooling_str,
+                            a.safe_masked_key()
+                        );
+                    }
+                    println!("=========================================================================================");
+                }
+            }
+            AccountCommands::Add { name, provider, key, url, model, quota, workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let mut store = AccountStore::load_from_path(&acc_path)?;
+                let profile = AccountProfile::new(name.clone(), provider, key, url, model, quota);
+                store.add_account(profile)?;
+                store.save_to_path(&acc_path)?;
+                println!("[OK] Account '{}' registered successfully.", name);
+            }
+            AccountCommands::Switch { id_or_name, workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let mut store = AccountStore::load_from_path(&acc_path)?;
+                store.switch_active(&id_or_name)?;
+                store.save_to_path(&acc_path)?;
+                println!("[OK] Switched active account to '{}'.", id_or_name);
+            }
+            AccountCommands::Remove { id_or_name, workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let mut store = AccountStore::load_from_path(&acc_path)?;
+                let removed = store.remove_account(&id_or_name)?;
+                store.save_to_path(&acc_path)?;
+                println!("[OK] Removed account '{}' ({})", removed.name, removed.id);
+            }
+            AccountCommands::Quota { workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let store = AccountStore::load_from_path(&acc_path)?;
+                let accounts = store.list_accounts();
+                if accounts.is_empty() {
+                    println!("No accounts found.");
+                } else {
+                    println!("=========================================================================================");
+                    println!("{:<16} {:<12} {:<14} {:<12} {:<12} {:<8}", "NAME", "PROVIDER", "QUOTA USED", "LIMIT", "REQUESTS", "ERRORS");
+                    println!("-----------------------------------------------------------------------------------------");
+                    for a in accounts {
+                        let limit_str = a.quota_limit.map(|q| q.to_string()).unwrap_or_else(|| "Unlimited".to_string());
+                        println!(
+                            "{:<16} {:<12} {:<14} {:<12} {:<12} {:<8}",
+                            a.name, a.provider, a.quota_used, limit_str, a.request_count, a.error_count
+                        );
+                    }
+                    println!("=========================================================================================");
+                }
+            }
+        },
+
+        Commands::Serve { port, host, workspace, preset: _ } => {
+            let acc_path = AccountStore::default_path(&workspace);
+            let store = AccountStore::load_from_path(&acc_path).unwrap_or_default();
+            let audit = Arc::new(AuditLogger::new(&workspace));
+            let cfg = GatewayConfig {
+                host,
+                port,
+                workspace: workspace.clone(),
+            };
+            let server = GatewayServer::new(cfg, store, audit);
+            server.run().await?;
+        }
+
+        Commands::Staff { sub } => match sub {
+            StaffCommands::Ask { question, workspace, preset } => {
+                let preset_name = resolve_preset(preset, &workspace, "Uncensored");
+                let p = AgentPreset::parse(&preset_name).ok_or_else(|| format!("Unknown preset: {}", preset_name))?;
+                let runner = AgentRunner::new(&workspace, p);
+                let provider = resolve_provider(&workspace);
+                let verdict = StaffRunner::run_ask(&workspace, &question, &runner, provider.as_ref())?;
+                println!("============================================================");
+                println!("[STAFF COMPANION: ASK]");
+                println!("============================================================");
+                println!("{}", verdict.summary);
+            }
+            StaffCommands::Research { topic, workspace, preset } => {
+                let preset_name = resolve_preset(preset, &workspace, "Unrestricted");
+                let p = AgentPreset::parse(&preset_name).ok_or_else(|| format!("Unknown preset: {}", preset_name))?;
+                let runner = AgentRunner::new(&workspace, p);
+                let provider = resolve_provider(&workspace);
+                let verdict = StaffRunner::run_research(&workspace, &topic, &runner, provider.as_ref())?;
+                println!("============================================================");
+                println!("[STAFF COMPANION: RESEARCHER]");
+                println!("============================================================");
+                println!("{}", verdict.summary);
+            }
+            StaffCommands::Review { file, workspace, preset } => {
+                let preset_name = resolve_preset(preset, &workspace, "Aggressive");
+                let p = AgentPreset::parse(&preset_name).ok_or_else(|| format!("Unknown preset: {}", preset_name))?;
+                let runner = AgentRunner::new(&workspace, p);
+                let provider = resolve_provider(&workspace);
+                let verdict = StaffRunner::run_review(&workspace, file.as_deref(), &runner, provider.as_ref())?;
+                println!("============================================================");
+                println!("[STAFF COMPANION: CODE REVIEWER]");
+                println!("============================================================");
+                if let Some(decision) = verdict.decision {
+                    println!("Verdict: {}\n", decision);
+                }
+                println!("{}", verdict.summary);
+            }
+            StaffCommands::Implement { task, force, workspace, preset } => {
+                let preset_name = resolve_preset(preset, &workspace, "Unleashed");
+                let p = AgentPreset::parse(&preset_name).ok_or_else(|| format!("Unknown preset: {}", preset_name))?;
+                let runner = AgentRunner::new(&workspace, p);
+                let provider = resolve_provider(&workspace);
+                match StaffRunner::run_implement(&workspace, &task, force, &runner, provider.as_ref()) {
+                    Ok(verdict) => {
+                        println!("============================================================");
+                        println!("[STAFF COMPANION: IMPLEMENTER]");
+                        println!("============================================================");
+                        println!("Dirty Tree Safety Guardrail: PASSED (Files checked: {})", verdict.uncommitted_files.len());
+                        println!("{}", verdict.summary);
+                    }
+                    Err(e) => {
+                        eprintln!("[STAFF COMPANION ERROR]: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+        },
+
+        Commands::Client { sub } => match sub {
+            ClientCommands::Detect => {
+                println!("============================================================");
+                println!("ANTIGRAVITY / AGY CLIENT INSTALLATION DETECTOR");
+                println!("============================================================");
+                if let Some(path) = ClientManager::detect_installation() {
+                    let version = ClientManager::probe_version(&path).unwrap_or_else(|| "Unknown".to_string());
+                    println!("Status:   [INSTALLED]");
+                    println!("Path:     {}", path.display());
+                    println!("Version:  {}", version);
+                } else {
+                    println!("Status:   [NOT FOUND]");
+                    println!("Note:     No standard AGY or Antigravity binary detected on PATH or system install directories.");
+                }
+            }
+            ClientCommands::Status { port } => {
+                println!("============================================================");
+                println!("ANTIGRAVITY / AGY CLIENT & GATEWAY TELEMETRY");
+                println!("============================================================");
+                let report = ClientManager::inspect_environment(Some(port));
+                println!("Installed:          {}", if report.installed { "[PASS]" } else { "[NO]" });
+                if let Some(p) = report.binary_path {
+                    println!("Binary Path:        {}", p.display());
+                }
+                if let Some(v) = report.version {
+                    println!("Version:            {}", v);
+                }
+                println!("Running Processes:  {}", report.running_processes.len());
+                for proc in &report.running_processes {
+                    println!("  - PID {:<6} {}", proc.pid, proc.name);
+                }
+                println!("Gateway Online:     {}", if report.gateway_connected { "[CONNECTED on port ".to_string() + &port.to_string() + "]" } else { "[DISCONNECTED / STANDALONE]".to_string() });
+            }
+        },
+
         Commands::Preset { sub } => match sub {
             PresetCommands::List => {
                 println!("Available Presets:");
@@ -409,43 +728,66 @@ fn resolve_preset(cli_preset: Option<String>, workspace: &Path, fallback: &str) 
 }
 
 fn resolve_provider(workspace: &Path) -> Box<dyn Provider> {
-    let cfg_path = workspace.join(".agy").join("config.json");
-    let mut file_url = None;
-    let mut file_key = None;
-    let mut file_model = None;
+    let env_key = std::env::var("OPENAI_API_KEY").ok();
+    let env_url = std::env::var("OPENAI_BASE_URL").ok();
+    let env_model = std::env::var("AGY_MODEL").ok().or_else(|| std::env::var("OPENAI_MODEL").ok());
 
+    if env_key.is_some() || env_url.is_some() {
+        let key = env_key.unwrap_or_else(|| "ollama".to_string());
+        let url = env_url.unwrap_or_else(|| "http://localhost:11434/v1".to_string());
+        let model = env_model.unwrap_or_else(|| "gpt-4o".to_string());
+        return Box::new(OpenAiCompatibleProvider {
+            base_url: url,
+            api_key: key,
+            default_model: model,
+        }) as Box<dyn Provider>;
+    }
+
+    // Check AccountStore for configured active account
+    let accounts_path = AccountStore::default_path(workspace);
+    if let Ok(store) = AccountStore::load_from_path(&accounts_path) {
+        if let Some(active) = store.get_active_account() {
+            let base_url = active.base_url.clone().unwrap_or_else(|| {
+                match active.provider.to_lowercase().as_str() {
+                    "claude" => "https://api.anthropic.com/v1".to_string(),
+                    "gemini" => "https://generativelanguage.googleapis.com".to_string(),
+                    _ => "https://api.openai.com/v1".to_string(),
+                }
+            });
+            let model = active.model.clone().unwrap_or_else(|| "gpt-4o".to_string());
+            return Box::new(OpenAiCompatibleProvider {
+                base_url,
+                api_key: active.api_key.clone(),
+                default_model: model,
+            }) as Box<dyn Provider>;
+        }
+    }
+
+    // Check workspace .agy/config.json
+    let cfg_path = workspace.join(".agy").join("config.json");
     if cfg_path.exists() {
         if let Ok(content) = std::fs::read_to_string(&cfg_path) {
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(prov) = val.get("provider") {
-                    file_url = prov.get("base_url").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    file_key = prov.get("api_key").and_then(|v| v.as_str()).map(|s| s.to_string());
-                    file_model = prov.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let file_url = prov.get("base_url").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let file_key = prov.get("api_key").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    let file_model = prov.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
+                    if file_key.is_some() || file_url.is_some() {
+                        let key = file_key.unwrap_or_else(|| "ollama".to_string());
+                        let url = file_url.unwrap_or_else(|| "http://localhost:11434/v1".to_string());
+                        let model = file_model.unwrap_or_else(|| "gpt-4o".to_string());
+                        return Box::new(OpenAiCompatibleProvider {
+                            base_url: url,
+                            api_key: key,
+                            default_model: model,
+                        }) as Box<dyn Provider>;
+                    }
                 }
             }
         }
     }
 
-    let env_key = std::env::var("OPENAI_API_KEY").ok();
-    let env_url = std::env::var("OPENAI_BASE_URL").ok();
-    let env_model = std::env::var("AGY_MODEL").ok().or_else(|| std::env::var("OPENAI_MODEL").ok());
-
-    let final_key = env_key.or(file_key);
-    let final_url = env_url.or(file_url);
-    let final_model = env_model.or(file_model);
-
-    if final_key.is_some() || final_url.is_some() {
-        let key = final_key.unwrap_or_else(|| "ollama".to_string());
-        let url = final_url.unwrap_or_else(|| "http://localhost:11434/v1".to_string());
-        let model = final_model.unwrap_or_else(|| "gpt-4o".to_string());
-        Box::new(OpenAiCompatibleProvider {
-            base_url: url,
-            api_key: key,
-            default_model: model,
-        }) as Box<dyn Provider>
-    } else {
-        Box::new(MockProvider::new("")) as Box<dyn Provider>
-    }
+    Box::new(MockProvider::new("")) as Box<dyn Provider>
 }
 
 fn which_check(tool: &str) -> bool {

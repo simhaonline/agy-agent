@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-lightgrey.svg)](https://microsoft.com/windows)
 [![Platform: Linux x64/x86 MUSL](https://img.shields.io/badge/platform-Linux%20MUSL-lightgrey.svg)](https://alpinelinux.org/)
-[![Tests](https://img.shields.io/badge/tests-33%20passed%2C%200%20failed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-48%20passed%2C%200%20failed-brightgreen.svg)]()
 
 A high-performance, memory-safe Rust Cargo workspace delivering two strictly separated, independently usable software products:
 
@@ -347,6 +347,79 @@ agy-agent audit
 
 # Show last 50 audit events
 agy-agent audit --limit 50
+```
+
+#### 9. Multi-Account Management & Quota Engine (`account`)
+Manage multiple API accounts, custom endpoints, quota ceilings, and rate-limiting cooldown states (inspired by `agy-switch`, implemented from scratch in pure Rust):
+```bash
+# List all configured accounts, active status, cooldown, and masked keys
+agy-agent account list
+
+# Register a new account profile (supports OpenAI, Claude, Gemini, DeepSeek, Ollama, etc.)
+agy-agent account add --name "Claude-Work" --provider "claude" --key "sk-ant-api03-..." --model "claude-3-5-sonnet" --quota 250000
+
+agy-agent account add --name "OpenAI-Backup" --provider "openai" --key "sk-proj-..." --model "gpt-4o"
+
+# Switch active account immediately
+agy-agent account switch OpenAI-Backup
+
+# View quota usage, remaining limits, request counts, and error telemetry
+agy-agent account quota
+
+# Remove an account
+agy-agent account remove Claude-Work
+```
+
+#### 10. Universal Local API Gateway (`serve`)
+Start a pure Rust async HTTP API gateway that translates incoming requests from any AI tool or IDE extension (Cursor, Cline, Continue, Aider, Open-WebUI, or curl) into AGY agent executions or upstream providers (inspired by `agy2api`):
+```bash
+# Start local API gateway on default port 8080 (http://127.0.0.1:8080)
+agy-agent serve
+
+# Bind to custom port and host interface
+agy-agent serve --host 127.0.0.1 --port 9000 --preset Aggressive
+```
+
+**Supported Protocol Endpoints:**
+- **OpenAI Compatible**: `POST /v1/chat/completions` & `GET /v1/models`
+- **Anthropic Claude Compatible**: `POST /v1/messages`
+- **Google Gemini Compatible**: `POST /v1beta/models/{model}:generateContent`
+- **Gateway Telemetry & Health**: `GET /health` & `GET /status`
+- **CORS Preflight**: Fully enabled (`OPTIONS *`) for web and browser IDE integrations.
+- **Automatic 429 Cooling & Load Balancing**: When any upstream account encounters HTTP 429 or rate limits, the gateway automatically marks that account as cooling for 60s, logs an audit record, and immediately fails over to the next healthy account in the pool without dropping your request!
+
+#### 11. AI Staffer Companion & Git Safety Guardrail (`staff`)
+Delegate tasks to specialized developer staff roles with built-in protection against clobbering uncommitted work (inspired by `agy-staff`):
+```bash
+# 1. Ask Role: Rapid technical Q&A grounded in repository context
+agy-agent staff ask "Explain the data flow of the transaction lifecycle"
+
+# 2. Researcher Role: Read-only architecture investigation (strictly avoids file modifications)
+agy-agent staff research "Inspect crypto modules and check if SHA-256 uses constant-time comparison"
+
+# 3. Reviewer Role: Structured code review of git diffs or specific files
+agy-agent staff review
+agy-agent staff review --file crates/agent-core/src/account.rs
+
+# 4. Implementer Role: Code implementation with mandatory Git Dirty-Tree Safety Guardrail
+agy-agent staff implement "Add exponential backoff retry to gateway connector"
+
+# Override refusal if working tree contains uncommitted changes
+agy-agent staff implement "Refactor session store" --force
+```
+
+> [!IMPORTANT]
+> **Git Dirty-Tree Safety Guardrail:** The `implement` staffer checks `git status --porcelain` before executing. If you have uncommitted changes in your repository, the staffer refuses to run unless `--force` is explicitly provided. This prevents autonomous agents from accidentally overwriting your in-progress work!
+
+#### 12. Host Client & Process Inspector (`client`)
+Detect host Antigravity/AGY client installations, inspect binary metadata, monitor running client processes, and verify gateway connectivity (inspired by `AntigravityManager`):
+```bash
+# Detect client installation paths (AppData, /usr/local/bin, PATH) and version
+agy-agent client detect
+
+# Inspect running AGY client processes (PID, status) and gateway connection
+agy-agent client status
+agy-agent client status --port 8080
 ```
 
 ---

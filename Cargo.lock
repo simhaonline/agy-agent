@@ -33,6 +33,7 @@ dependencies = [
  "common",
  "policy",
  "providers",
+ "reqwest",
  "serde",
  "serde_json",
  "session",

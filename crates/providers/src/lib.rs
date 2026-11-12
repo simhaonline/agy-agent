@@ -141,34 +141,45 @@ impl Provider for OpenAiCompatibleProvider {
             &req.model
         };
 
-        // Real endpoint call via reqwest blocking or tokio
-        let client = reqwest::blocking::Client::new();
+        let api_key = self.api_key.clone();
+        let base_url = self.base_url.clone();
         let payload = serde_json::json!({
             "model": model_to_use,
             "messages": req.messages,
             "temperature": req.temperature.unwrap_or(0.7)
         });
 
-        let resp = client
-            .post(format!("{}/chat/completions", self.base_url))
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&payload)
-            .send()
-            .map_err(|e| CommonError::Generic(format!("Provider request failed: {}", e)))?;
+        let res = std::thread::spawn(move || -> Result<CompletionResponse, CommonError> {
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .map_err(|e| CommonError::Generic(e.to_string()))?;
 
-        let val: Value = resp.json()
-            .map_err(|e| CommonError::Generic(format!("Invalid provider response JSON: {}", e)))?;
+            let resp = client
+                .post(format!("{}/chat/completions", base_url))
+                .header("Authorization", format!("Bearer {}", api_key))
+                .json(&payload)
+                .send()
+                .map_err(|e| CommonError::Generic(format!("Provider request failed: {}", e)))?;
 
-        let content = val["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
+            let val: Value = resp.json()
+                .map_err(|e| CommonError::Generic(format!("Invalid provider response JSON: {}", e)))?;
 
-        Ok(CompletionResponse {
-            content,
-            tool_calls: Vec::new(),
-            usage_tokens: val["usage"]["total_tokens"].as_u64().unwrap_or(0) as usize,
+            let content = val["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+
+            Ok(CompletionResponse {
+                content,
+                tool_calls: Vec::new(),
+                usage_tokens: val["usage"]["total_tokens"].as_u64().unwrap_or(0) as usize,
+            })
         })
+        .join()
+        .map_err(|_| CommonError::Generic("Provider thread panicked".to_string()))??;
+
+        Ok(res)
     }
 
     fn capabilities(&self) -> ProviderCapabilities {

@@ -226,10 +226,60 @@ flowchart LR
    ```
 
 8. **Monitor Live Audit Logs:**
-   Stream or tail audit events in real time:
+   Stream or inspect audit events:
    ```bash
-   agy-agent audit tail -n 20
+   agy-agent audit --limit 20
    ```
+
+9. **Multi-Account Switching & Quotas (`account`):**
+   Register and toggle accounts with automated 429 cooldown failover:
+   ```bash
+   # Add Claude and OpenAI profiles
+   agy-agent account add --name "Claude-Work" --provider "claude" --key "sk-ant-..." --model "claude-3-5-sonnet" --quota 250000
+   agy-agent account add --name "OpenAI-Backup" --provider "openai" --key "sk-proj-..." --model "gpt-4o"
+
+   # List accounts and check quotas
+   agy-agent account list
+   agy-agent account quota
+
+   # Switch active account
+   agy-agent account switch Claude-Work
+   ```
+
+10. **Universal Local API Gateway Server (`serve`):**
+    Expose standard OpenAI, Claude, and Gemini API endpoints for local IDE extensions (Cursor, Cline, Continue, Aider):
+    ```bash
+    agy-agent serve --port 8080 --host 127.0.0.1
+    ```
+    Configure your IDE tool with:
+    - **Base URL:** `http://127.0.0.1:8080/v1`
+    - **API Key:** `any-key` (or managed by active account)
+    - **Model:** `gpt-4o` or `claude-3-5-sonnet`
+
+11. **AI Staffer Delegation & Git Safety Guardrail (`staff`):**
+    Deploy specialized companion roles for code exploration, review, and editing:
+    ```bash
+    # Q&A grounded in codebase
+    agy-agent staff ask "How does the patch staging transaction work?"
+
+    # Read-only architecture research
+    agy-agent staff research "Examine all policy checks in agent runner"
+
+    # Code review on current git diff
+    agy-agent staff review
+
+    # Code implementation with dirty-tree safety checks
+    agy-agent staff implement "Implement exponential backoff"
+    # (Refuses to clobber uncommitted files unless --force is provided)
+    agy-agent staff implement "Quick fix" --force
+    ```
+
+12. **Host Client & Process Inspector (`client`):**
+    Detect installed desktop/CLI clients, versions, running processes, and gateway telemetry:
+    ```bash
+    agy-agent client detect
+    agy-agent client status
+    ```
 
 ---
 
