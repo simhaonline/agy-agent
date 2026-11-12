@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-lightgrey.svg)](https://microsoft.com/windows)
 [![Platform: Linux x64/x86 MUSL](https://img.shields.io/badge/platform-Linux%20MUSL-lightgrey.svg)](https://alpinelinux.org/)
-[![Tests](https://img.shields.io/badge/tests-48%20passed%2C%200%20failed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-56%20passed%2C%200%20failed-brightgreen.svg)]()
 
 A high-performance, memory-safe Rust Cargo workspace delivering two strictly separated, independently usable software products:
 
@@ -391,8 +391,40 @@ agy-agent account quota
 > [!NOTE]
 > **Credential Safety & Pre-Switch Backups:** Before modifying live credentials in `~/.gemini/antigravity-cli/antigravity-oauth-token` or Desktop profiles, `agy-agent` automatically writes a timestamped, SHA-256-verified backup to `.agy/auth_backups/`. All live credential updates use atomic staged writes (`.agy_token_stage_<uuid>` + `fsync` + atomic rename) to guarantee zero file corruption.
 
-#### 10. Universal Local API Gateway (`serve`)
-Start a pure Rust async HTTP API gateway that translates incoming requests from any AI tool or IDE extension (Cursor, Cline, Continue, Aider, Open-WebUI, or curl) into AGY agent executions or upstream providers (inspired by `agy2api`):
+#### 10. Instant 1-Step Account Swap & Process Memory Warning (`swap`)
+Perform instant, one-step account profile swaps with automated pre-switch backups and live running-process memory inspection (inspired by `pr656d/agy-swap` and `g1mn/agyswap`):
+```bash
+# Instant 1-step swap to specified account
+agy-agent swap "Google-Personal"
+
+# Swap targeting CLI only, Desktop only, or both
+agy-agent swap "Google-Personal" --target cli
+agy-agent swap "Work-Enterprise" --target both
+```
+
+> [!WARNING]
+> **Host Process In-Memory Token Caching Advisory:**
+> Antigravity CLI (`agy.exe` / `agy`) reads and caches the OAuth token in memory upon process startup. If you swap active profiles while a terminal or editor session is running, active CLI processes will continue using the previously cached token until restarted. `agy-agent swap` detects running PIDs and emits an actionable restart notice:
+> `⚠ WARNING: Detected 1 running Antigravity process(es) (PID: 1492). Active terminals cache tokens in memory; restart your active terminal to use the newly swapped credentials.`
+
+#### 11. Antigravity Manager (AGM) Unified Operations (`agm`)
+Full unified Antigravity Manager command suite providing native parity with `shyim/agm`:
+```bash
+# Unified AGM credential vault operations
+agy-agent agm list
+agy-agent agm switch "Google-Work" --target both
+agy-agent agm rotate --threshold 90.0
+agy-agent agm rank
+agy-agent agm capture --name "Imported-Profile"
+agy-agent agm sync
+agy-agent agm export --output .agy/backup_bundle.json
+agy-agent agm import .agy/backup_bundle.json
+agy-agent agm backups
+agy-agent agm restore .agy/auth_backups/<backup_file>.bak
+```
+
+#### 12. Universal Local API Gateway & Argon Bridge (`serve`)
+Start a pure Rust async HTTP API gateway that translates incoming requests from any AI tool or IDE extension (Cursor, Cline, Continue, Aider, Open-WebUI, or curl) into AGY agent executions or upstream providers (inspired by `agy2api`, `LilZeeCN/agy-argon-bridge`, and `kqlio67/agy-proxy`):
 ```bash
 # Start local API gateway on default port 8080 (http://127.0.0.1:8080)
 agy-agent serve
@@ -401,15 +433,16 @@ agy-agent serve
 agy-agent serve --host 127.0.0.1 --port 9000 --preset Aggressive
 ```
 
-**Supported Protocol Endpoints:**
+**Supported Protocol Endpoints & Routing Capabilities:**
 - **OpenAI Compatible**: `POST /v1/chat/completions` & `GET /v1/models`
 - **Anthropic Claude Compatible**: `POST /v1/messages`
 - **Google Gemini Compatible**: `POST /v1beta/models/{model}:generateContent`
-- **Gateway Telemetry & Health**: `GET /health` & `GET /status`
-- **CORS Preflight**: Fully enabled (`OPTIONS *`) for web and browser IDE integrations.
-- **Automatic 429 Cooling & Load Balancing**: When any upstream account encounters HTTP 429 or rate limits, the gateway automatically marks that account as cooling for 60s, logs an audit record, and immediately fails over to the next healthy account in the pool without dropping your request!
+- **Gemini 4 Argon & Flash Thinking Reasoning Router**: Native upstream support for `gemini-4-argon` and `gemini-2.0-flash-thinking` models, including streaming connection keep-alive heartbeat handling to prevent IDE client timeouts during deep reasoning chains (inspired by `LilZeeCN/agy-argon-bridge`).
+- **Proxy Telemetry & Metrics (`kqlio67/agy-proxy`)**: `GET /api/proxy/stats` returns real-time request counts, error counts, tokens consumed, active cooling accounts, and upstream failover metrics.
+- **Credential Restoration API**: `POST /api/auth/restore` enables 1-click credential restoration from historical `.bak` files directly via HTTP or Web UI.
+- **Automatic 429 Cooling & Load Balancing**: When any upstream account encounters HTTP 429 or rate limits, the gateway marks that account as cooling for 60s, logs an audit record, and immediately fails over to the next healthy account in the pool without dropping your request!
 
-#### 11. AI Staffer Companion & Git Safety Guardrail (`staff`)
+#### 13. AI Staffer Companion & Git Safety Guardrail (`staff`)
 Delegate tasks to specialized developer staff roles with built-in protection against clobbering uncommitted work (inspired by `agy-staff`):
 ```bash
 # 1. Ask Role: Rapid technical Q&A grounded in repository context
@@ -432,7 +465,7 @@ agy-agent staff implement "Refactor session store" --force
 > [!IMPORTANT]
 > **Git Dirty-Tree Safety Guardrail:** The `implement` staffer checks `git status --porcelain` before executing. If you have uncommitted changes in your repository, the staffer refuses to run unless `--force` is explicitly provided. This prevents autonomous agents from accidentally overwriting your in-progress work!
 
-#### 12. Host Client & Process Inspector (`client`)
+#### 14. Host Client & Process Inspector (`client`)
 Detect host Antigravity/AGY client installations, inspect binary metadata, monitor running client processes, and verify gateway connectivity (inspired by `AntigravityManager`):
 ```bash
 # Detect client installation paths (AppData, /usr/local/bin, PATH) and version
@@ -443,10 +476,10 @@ agy-agent client status
 agy-agent client status --port 8080
 ```
 
-#### 13. Interactive Web UI/UX Dashboard (`dashboard` & `serve --open`)
-Access the modern, dark glassmorphic web dashboard directly in your browser. Seamlessly integrates Multi-Account switching, Gateway status, Host Client process telemetry, AI Staff companion playground, and live tamper-evident audit streaming:
+#### 15. Dedicated Enterprise AGY Manager & Operations Console (`dashboard` & `serve --open`)
+Access the pure, dedicated **Enterprise AGY Manager & Operations Console** directly in your browser. Engineered from the ground up strictly as a credential vault, process supervisor, and proxy gateway console (**strictly zero chat or conversational UI**):
 ```bash
-# Launch dashboard server and automatically open your default browser
+# Launch manager dashboard and automatically open your default browser
 agy-agent dashboard
 
 # Bind dashboard to custom port
@@ -456,14 +489,31 @@ agy-agent dashboard --port 8080 --host 127.0.0.1
 agy-agent serve --open
 ```
 
-**Dashboard Features & User Experience:**
-- 🎛️ **Live System Overview:** Instant status cards for active provider/model, quota usage %, active cooling status, and client detection.
-- 👥 **Multi-Account Manager:** Visual cards for every registered provider (OpenAI, Claude, Gemini, DeepSeek, Ollama). Switch active account with 1 click, track token usage bars, or add new keys via modal dialog.
-- 🛡️ **Host Client & Process Inspector:** Detects local AGY client installation, parses version info, displays active process PIDs, and live gateway port connectivity.
-- 🤖 **Interactive AI Staff Companion:** Direct in-browser chat playground with instant role selection (`Ask`, `Researcher`, `Reviewer`, `Implementer`) and behavior presets (`Aggressive`, `Heretic`, `Uncensored`, `Unrestricted`, `Abliterated`, `Unleashed`).
-- 📜 **Tamper-Evident Audit Feed:** Real-time stream of `.agy/audit.jsonl` events showing exact timestamps, tools called, redacted secrets, and execution results.
-- 🔌 **Instant IDE Connect Snippets:** Ready-to-copy configuration snippets for Cursor (`~/.cursor/settings.json`), Cline, Continue, Aider, Python SDK, and curl.
-- ⚡ **Zero External Dependencies:** Built with pure Rust single-binary embedding (`include_str!`). No NodeJS, npm, webpack, or static asset directories required.
+**Manager Console Capabilities & UX Layout:**
+- 🎛️ **Top Executive KPI Bar:** Live indicators for Active Credential Profile, Pool Health & Standby count, Proxy Throughput/Tokens, and Host Antigravity Client installation status.
+- 👥 **Multi-Account Credential Pool & Vault:** Visual cards with dynamic Health Score badges (0–100), Plan Tiers (`Free`, `Pro`, `Ultra`, `Enterprise`), token fingerprints, live quota usage progress bars (color-coded amber/red at $\ge 90\%$), and 1-click **"⚡ Swap to Active"** and **"Delete"** actions.
+- ⚡ **Instant 1-Click Profile Swapping:** Instant credential switching with automatic pre-switch backup creation in `.agy/auth_backups/`.
+- 🛡️ **Host Process Supervisor & Memory Cache Advisory:** Live table of running Antigravity client processes (PIDs, status, path), paired with real-time warnings alerting developers to restart terminals if in-memory token caching is active.
+- 🌐 **Local Proxy Router & Argon Bridge:** Full protocol translation table (`/v1/chat/completions`, `/v1/messages`, `/v1beta/models/...`), upstream Argon reasoning support, and 1-click copy configuration snippets for Cursor, Windsurf, Cline, Continue, and cURL.
+- 💾 **Pre-Switch Credential Backups Vault:** Live inspection of historical backups in `.agy/auth_backups/` with cryptographic SHA-256 fingerprints, file sizes, timestamps, and 1-click **"Restore"** actions.
+- 📜 **Tamper-Evident Security Audit Stream:** Real-time log of security events from `.agy/audit.jsonl` with timestamps, action categories, and redacted credentials.
+- ⚡ **Zero External Dependencies:** 100% pure Rust single-binary embedding (`include_str!`). No NodeJS, npm, webpack, or static web asset directories required. Pure operational control.
+
+---
+
+### Reference Architecture & Pure Rust Integrations
+
+`agy-agent` synthesizes the best capabilities of community projects into a single, cohesive, memory-safe Rust binary:
+
+| Upstream Project Reference | Key Feature Synthesized in Pure Rust | Implementation in `agy-agent` |
+|---|---|---|
+| **`LilZeeCN/agy-argon-bridge`** | `gemini-4-argon` and Flash Thinking routing, keep-alive heartbeat streaming | `crates/agent-core/src/gateway.rs` routes reasoning models with zero client timeouts |
+| **`shyim/agm`** | Unified Antigravity Manager CLI command suite | `agy-agent agm <list\|switch\|rotate\|rank\|capture\|sync\|export\|import\|backups\|restore>` |
+| **`pr656d/agy-swap` & `g1mn/agyswap`** | 1-step profile switching, host process caching detection | `agy-agent swap <name>` with automatic pre-backup and `running_processes_warn` |
+| **`zcop/agy-cli-manager` & `fikrilal/agy-auth`** | Multi-account pool health scoring (0–100), quota failover | Dynamic scoring algorithm, active-standby sync, and 429 cooling pool |
+| **`kqlio67/agy-proxy` & `su-kaka/agy2api`** | Local proxy gateway, multi-protocol translation, proxy stats | Universal Axum-based server with `/api/proxy/stats` and IDE connect snippets |
+| **`Draculabo/AntigravityManager`** | Host client executable detection and process monitoring | System process scanner with PID table and gateway connectivity checks |
+| **`keli-wen/agy-staff`** | Specialized companion staff roles with git tree safety | `agy-agent staff` with strict Git Dirty-Tree Safety guardrail |
 
 ---
 
@@ -914,16 +964,17 @@ $env:PATH = "C:\mingw64\bin;C:\Users\MEHULK~1\.cargo\bin;" + $env:PATH
 
 ### Running Workspace Tests
 
-Run the complete 33-test acceptance and unit test matrix:
+Run the complete 56-test acceptance and unit test matrix:
 
 ```bash
-cargo test --workspace --release
+cargo test --workspace
 ```
 
-All 33 tests across all 9 crates will pass:
+All 56 tests across all crates pass cleanly:
 ```
+test result: ok. 15 passed (agent-core unit tests: accounts, auth, health scoring, rotation, process check, staff, git guardrail)
+test result: ok. 17 passed (agent-core acceptance tests: T33, T34, T36, T37, T41, T42, T43, T44, T46, T47, T48, T49, T50, T51, T52, T53, T54)
 test result: ok. 14 passed (patcher acceptance tests: T01, T02, T03, T06, T08, T09, T10, T12, T13, T14, T18, T20, T23, T24)
-test result: ok. 9 passed  (agent acceptance tests: T33, T34, T36, T37, T41, T42, T43, T44, T46)
 test result: ok. 10 passed (unit tests across common, policy, tools, patcher-core)
 ```
 

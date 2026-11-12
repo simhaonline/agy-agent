@@ -56,6 +56,10 @@ pub struct SwitchReport {
     pub target_mode: TargetMode,
     pub updated_paths: Vec<PathBuf>,
     pub backups_created: Vec<BackupInfo>,
+    #[serde(default)]
+    pub running_processes_detected: Vec<u32>,
+    #[serde(default)]
+    pub warning: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -339,6 +343,19 @@ impl AuthCredentialManager {
         let store_path = AccountStore::default_path(workspace);
         store.save_to_path(&store_path)?;
 
+        // 4. Inspect active host processes (inspired by agy-swap & AntigravityManager)
+        let running_procs = crate::manager::ClientManager::list_running_processes();
+        let running_pids: Vec<u32> = running_procs.iter().map(|p| p.pid).collect();
+        let warning = if !running_pids.is_empty() {
+            Some(format!(
+                "Note: {} running Antigravity process(es) detected (PID: {:?}). The CLI caches tokens at launch; please restart active terminals to apply new credentials.",
+                running_pids.len(),
+                running_pids
+            ))
+        } else {
+            None
+        };
+
         Ok(SwitchReport {
             account_id: profile.id,
             account_name: profile.name,
@@ -346,6 +363,8 @@ impl AuthCredentialManager {
             target_mode: target,
             updated_paths,
             backups_created,
+            running_processes_detected: running_pids,
+            warning,
             timestamp: Utc::now(),
         })
     }

@@ -278,22 +278,40 @@ async fn handle_http_stream(
     } else if path == "/api/audit" && method == "GET" {
         let events = audit.read_events().unwrap_or_default();
         (200, json!(events))
-    } else if path == "/api/chat" && method == "POST" {
+    } else if path == "/api/proxy/stats" && method == "GET" {
+        let store = accounts.read().await;
+        let accounts = store.list_accounts();
+        let total_requests: u64 = accounts.iter().map(|a| a.request_count).sum();
+        let total_errors: u64 = accounts.iter().map(|a| a.error_count).sum();
+        let total_tokens: u64 = accounts.iter().map(|a| a.quota_used).sum();
+        let cooling_count = accounts.iter().filter(|a| a.is_cooling()).count();
+        let active_name = store.get_active_account().map(|a| a.name.clone());
+        (
+            200,
+            json!({
+                "service": "agy-proxy",
+                "port": config.port,
+                "host": config.host,
+                "total_accounts": accounts.len(),
+                "active_account": active_name,
+                "cooling_accounts": cooling_count,
+                "total_requests": total_requests,
+                "total_errors": total_errors,
+                "total_tokens": total_tokens,
+                "timestamp": Utc::now()
+            }),
+        )
+    } else if path == "/api/auth/restore" && method == "POST" {
         let val: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
-        let prompt = val["prompt"].as_str().unwrap_or("Hello");
-        let req = CompletionRequest {
-            model: "gpt-4o".to_string(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: prompt.to_string(),
-                tool_calls: None,
-            }],
-            temperature: Some(0.7),
-            max_tokens: Some(2048),
-        };
-        match execute_with_account_failover(&req, &accounts, &audit).await {
-            Ok((content, tokens)) => (200, json!({ "response": content, "tokens": tokens })),
-            Err((status, msg)) => (status, json!({ "error": { "message": msg } })),
+        let file_path = val["file"].as_str().unwrap_or("");
+        let target_str = val["target"].as_str().unwrap_or("both");
+        let target_mode = target_str.parse::<crate::auth::TargetMode>().unwrap_or_default();
+        match crate::auth::AuthCredentialManager::restore_backup(std::path::Path::new(file_path), target_mode) {
+            Ok(report) => {
+                let _ = audit.log("gateway", "gateway", "auth_restore", json!({ "file": file_path, "targets": report.updated_paths.len() }));
+                (200, json!({ "status": "ok", "message": "Restored backup successfully", "report": report }))
+            }
+            Err(e) => (400, json!({ "error": e.to_string() })),
         }
     } else if path == "/status" || path == "/v1/status" {
         let store = accounts.read().await;
@@ -316,13 +334,14 @@ async fn handle_http_stream(
             json!({
                 "object": "list",
                 "data": [
-                    { "id": "gpt-4o", "object": "model", "owned_by": "agy" },
-                    { "id": "gpt-4-turbo", "object": "model", "owned_by": "agy" },
-                    { "id": "claude-3-5-sonnet", "object": "model", "owned_by": "agy" },
-                    { "id": "claude-3-opus", "object": "model", "owned_by": "agy" },
-                    { "id": "gemini-1.5-pro", "object": "model", "owned_by": "agy" },
-                    { "id": "gemini-1.5-flash", "object": "model", "owned_by": "agy" },
-                    { "id": "deepseek-coder", "object": "model", "owned_by": "agy" },
+                    { "id": "gemini-4-argon", "object": "model", "owned_by": "google", "description": "Gemini 4 Argon Advanced Reasoning Model (Argon Bridge)" },
+                    { "id": "gemini-2.0-flash-thinking", "object": "model", "owned_by": "google", "description": "Gemini 2.0 Flash Thinking Deep-Reasoning Model" },
+                    { "id": "gemini-2.0-flash", "object": "model", "owned_by": "google" },
+                    { "id": "claude-3-5-sonnet", "object": "model", "owned_by": "anthropic" },
+                    { "id": "claude-3-opus", "object": "model", "owned_by": "anthropic" },
+                    { "id": "gpt-4o", "object": "model", "owned_by": "openai" },
+                    { "id": "gpt-4-turbo", "object": "model", "owned_by": "openai" },
+                    { "id": "deepseek-coder", "object": "model", "owned_by": "deepseek" },
                     { "id": "agy-default", "object": "model", "owned_by": "agy" }
                 ]
             }),

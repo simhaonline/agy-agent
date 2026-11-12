@@ -66,6 +66,23 @@ enum Commands {
         sub: AuthCommands,
     },
 
+    /// Instant account swap with pre-switch backup and process check (agy-swap / agyswap reference)
+    Swap {
+        /// Account name or nickname to switch to
+        name: String,
+        /// Target environment: cli, desktop, or both
+        #[arg(short, long, default_value = "both")]
+        target: String,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+
+    /// Antigravity Manager (AGM) unified credential and vault manager (shyim/agm reference)
+    Agm {
+        #[command(subcommand)]
+        sub: AuthCommands,
+    },
+
     /// Start universal local API gateway for OpenAI, Claude, and Gemini formats (agy2api)
     Serve {
         /// Port to bind the HTTP gateway server
@@ -674,6 +691,132 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Target Mode:    {:?}", report.target_mode);
                 for p in &report.updated_paths {
                     println!("  - Target:     {}", p.display());
+                }
+            }
+        },
+
+        Commands::Swap { name, target, workspace } => {
+            let target_mode = target.parse::<TargetMode>()?;
+            let acc_path = AccountStore::default_path(&workspace);
+            let mut store = AccountStore::load_from_path(&acc_path)?;
+            let report = AuthCredentialManager::apply_switch(&mut store, &name, target_mode, &workspace)?;
+            println!("============================================================");
+            println!("AGY ACCOUNT SWAP: SUCCESSFUL (agy-swap reference)");
+            println!("============================================================");
+            println!("Active Account: {} ({})", report.account_name, report.provider);
+            println!("Target Mode:    {:?}", report.target_mode);
+            for p in &report.updated_paths {
+                println!("  - Target:     {}", p.display());
+            }
+            for b in &report.backups_created {
+                println!("  - Pre-Backup: {} (SHA-256: {})", b.filename, &b.sha256[..8]);
+            }
+            if let Some(w) = report.warning {
+                println!("\n[PROCESS WARNING]: {}", w);
+            }
+        },
+
+        Commands::Agm { sub } => {
+            // Forward directly to Auth handler logic by recreating sub dispatch
+            match sub {
+                AuthCommands::List { workspace } => {
+                    let acc_path = AccountStore::default_path(&workspace);
+                    let store = AccountStore::load_from_path(&acc_path)?;
+                    let ranking = store.rank_accounts();
+                    if ranking.is_empty() {
+                        println!("No accounts configured in AGM vault. Use 'agy-agent agm capture' or 'agy-agent account add'.");
+                    } else {
+                        println!("==========================================================================================================");
+                        println!("AGM VAULT ACCOUNTS & HEALTH RANKING POOL");
+                        println!("==========================================================================================================");
+                        println!("{:<4} {:<16} {:<12} {:<10} {:<10} {:<14} {:<8} {:<16}", "RNK", "NAME", "PROVIDER", "TIER", "HEALTH", "STATUS", "ACTIVE", "KEY");
+                        println!("----------------------------------------------------------------------------------------------------------");
+                        for a in ranking {
+                            let active_str = if a.is_active { "[ACTIVE]" } else { " " };
+                            let health_bar = format!("{}/100", a.health_score);
+                            println!(
+                                "{:<4} {:<16} {:<12} {:<10} {:<10} {:<14} {:<8} {:<16}",
+                                a.rank, a.name, a.provider, a.plan_tier, health_bar, a.status, active_str, a.masked_key
+                            );
+                        }
+                        println!("==========================================================================================================");
+                    }
+                }
+                AuthCommands::Switch { id_or_name, target, workspace } => {
+                    let target_mode = target.parse::<TargetMode>()?;
+                    let acc_path = AccountStore::default_path(&workspace);
+                    let mut store = AccountStore::load_from_path(&acc_path)?;
+                    let report = AuthCredentialManager::apply_switch(&mut store, &id_or_name, target_mode, &workspace)?;
+                    println!("============================================================");
+                    println!("AGM SWITCH: SUCCESSFUL");
+                    println!("============================================================");
+                    println!("Account:        {} ({})", report.account_name, report.provider);
+                    println!("Target Mode:    {:?}", report.target_mode);
+                    for p in &report.updated_paths {
+                        println!("  - Target:     {}", p.display());
+                    }
+                    if let Some(w) = report.warning {
+                        println!("\n[PROCESS WARNING]: {}", w);
+                    }
+                }
+                AuthCommands::Rotate { threshold, workspace } => {
+                    let acc_path = AccountStore::default_path(&workspace);
+                    let mut store = AccountStore::load_from_path(&acc_path)?;
+                    match store.auto_rotate(threshold)? {
+                        Some(rot) => {
+                            let report = AuthCredentialManager::apply_switch(&mut store, &rot.to, TargetMode::Both, &workspace)?;
+                            println!("[AGM AUTO-ROTATE]: Switched from {} to {} ({}) - {}", rot.from, rot.to, report.provider, rot.reason);
+                        }
+                        None => println!("[AGM]: Active account is healthy. No rotation required."),
+                    }
+                }
+                AuthCommands::Rank { workspace } => {
+                    let acc_path = AccountStore::default_path(&workspace);
+                    let store = AccountStore::load_from_path(&acc_path)?;
+                    for a in store.rank_accounts() {
+                        println!("#{:02} [{}] Health: {}/100 | Quota: {} used | Status: {}", a.rank, a.name, a.health_score, a.quota_used, a.status);
+                    }
+                }
+                AuthCommands::Capture { name, email, plan, workspace } => {
+                    let acc_path = AccountStore::default_path(&workspace);
+                    let mut store = AccountStore::load_from_path(&acc_path).unwrap_or_default();
+                    let mut profile = AuthCredentialManager::capture_live_cli_token(&name, Some("antigravity"), plan.as_deref())?;
+                    if let Some(em) = email { profile.email = Some(em); }
+                    let captured_name = profile.name.clone();
+                    store.add_account(profile)?;
+                    store.save_to_path(&acc_path)?;
+                    println!("[AGM]: Captured live CLI token into vault profile '{}'.", captured_name);
+                }
+                AuthCommands::Sync { workspace } => {
+                    let acc_path = AccountStore::default_path(&workspace);
+                    let mut store = AccountStore::load_from_path(&acc_path).unwrap_or_default();
+                    let report = AuthCredentialManager::sync_with_cli(&mut store, &workspace)?;
+                    println!("[AGM SYNC]: {} | Active: {}", report.action_taken, report.active_account_name);
+                }
+                AuthCommands::Export { output, workspace } => {
+                    let acc_path = AccountStore::default_path(&workspace);
+                    let store = AccountStore::load_from_path(&acc_path)?;
+                    let out_file = output.unwrap_or_else(|| workspace.join(".agy").join("agm_vault.json"));
+                    AuthCredentialManager::export_bundle(&store, &out_file)?;
+                    println!("[AGM]: Exported vault to '{}'", out_file.display());
+                }
+                AuthCommands::Import { file, overwrite, workspace } => {
+                    let acc_path = AccountStore::default_path(&workspace);
+                    let mut store = AccountStore::load_from_path(&acc_path).unwrap_or_default();
+                    let count = AuthCredentialManager::import_bundle(&mut store, &file, overwrite)?;
+                    store.save_to_path(&acc_path)?;
+                    println!("[AGM]: Imported {} accounts into vault.", count);
+                }
+                AuthCommands::Backups { workspace } => {
+                    let backups = AuthCredentialManager::list_backups(&workspace);
+                    for b in backups {
+                        println!("Backup: {} ({} bytes, created: {})", b.filename, b.file_size, b.created_at.to_rfc3339());
+                    }
+                }
+                AuthCommands::Restore { file, target } => {
+                    let target_mode = target.parse::<TargetMode>()?;
+                    let report = AuthCredentialManager::restore_backup(&file, target_mode)?;
+                    println!("[AGM RESTORE]: Restored from {} to {:?}", report.restored_from.display(), report.target_mode);
                 }
             }
         },

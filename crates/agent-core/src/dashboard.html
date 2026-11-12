@@ -3,39 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AGY Control Center & Telemetry Dashboard</title>
+  <title>AGY Manager — Unified Multi-Account & Proxy Console</title>
   <style>
     :root {
-      --bg: #0b0f19;
-      --card-bg: rgba(18, 24, 39, 0.75);
+      --bg: #090d16;
+      --card-bg: rgba(15, 23, 42, 0.75);
+      --card-hover: rgba(30, 41, 59, 0.85);
       --card-border: rgba(255, 255, 255, 0.08);
       --accent: #38bdf8;
       --accent-grad: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
-      --text-main: #f1f5f9;
+      --text-main: #f8fafc;
       --text-muted: #94a3b8;
       --success: #10b981;
       --warning: #f59e0b;
       --danger: #ef4444;
+      --purple: #a855f7;
       --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background-color: var(--bg);
-      background-image: radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
-                        radial-gradient(circle at 85% 85%, rgba(129, 140, 248, 0.08) 0%, transparent 40%);
+      background-image: radial-gradient(circle at 10% 10%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+                        radial-gradient(circle at 90% 90%, rgba(129, 140, 248, 0.08) 0%, transparent 40%);
       color: var(--text-main);
       font-family: var(--font);
       min-height: 100vh;
-      padding-bottom: 60px;
+      padding-bottom: 80px;
     }
     header {
-      backdrop-filter: blur(12px);
-      background: rgba(11, 15, 25, 0.85);
+      backdrop-filter: blur(14px);
+      background: rgba(9, 13, 22, 0.9);
       border-bottom: 1px solid var(--card-border);
       position: sticky;
       top: 0;
       z-index: 100;
-      padding: 16px 32px;
+      padding: 16px 36px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -43,31 +45,15 @@
     .logo-group { display: flex; align-items: center; gap: 14px; }
     .logo-badge {
       background: var(--accent-grad);
-      color: #0b0f19;
+      color: #090d16;
       font-weight: 800;
-      font-size: 16px;
-      letter-spacing: 1px;
+      font-size: 15px;
+      letter-spacing: 1.5px;
       padding: 6px 14px;
       border-radius: 8px;
     }
-    .nav-links { display: flex; gap: 8px; }
-    .nav-btn {
-      background: transparent;
-      border: 1px solid transparent;
-      color: var(--text-muted);
-      padding: 8px 14px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
-    .nav-btn:hover, .nav-btn.active {
-      color: var(--text-main);
-      background: rgba(255, 255, 255, 0.05);
-      border-color: var(--card-border);
-    }
-    .header-status { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+    .header-tagline { font-size: 14px; color: var(--text-muted); font-weight: 500; }
+    .header-actions { display: flex; align-items: center; gap: 12px; }
     .status-pill {
       display: flex;
       align-items: center;
@@ -78,10 +64,13 @@
       color: var(--success);
       border-radius: 20px;
       font-weight: 600;
+      font-size: 13px;
     }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
-    .container { max-width: 1300px; margin: 32px auto; padding: 0 24px; }
-    .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; margin-bottom: 32px; }
+    .container { max-width: 1400px; margin: 30px auto; padding: 0 28px; }
+    
+    /* KPI Grid */
+    .grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 30px; }
     .metric-card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
@@ -90,337 +79,441 @@
       padding: 22px;
       position: relative;
       overflow: hidden;
+      transition: transform 0.2s, border-color 0.2s;
     }
+    .metric-card:hover { transform: translateY(-2px); border-color: rgba(56, 189, 248, 0.3); }
     .metric-card::before {
       content: '';
       position: absolute;
       top: 0; left: 0; right: 0; height: 3px;
       background: var(--accent-grad);
-      opacity: 0.7;
+      opacity: 0.8;
     }
-    .metric-title { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
-    .metric-value { font-size: 26px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+    .metric-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); font-weight: 600; margin-bottom: 8px; }
+    .metric-value { font-size: 26px; font-weight: 700; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
     .metric-subtitle { font-size: 13px; color: var(--text-muted); }
+
+    /* Section Panels */
     .section-box {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       backdrop-filter: blur(10px);
       border-radius: 16px;
-      padding: 28px;
-      margin-bottom: 32px;
+      padding: 26px;
+      margin-bottom: 30px;
     }
-    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-    .section-title { font-size: 19px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 10px; }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 22px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .section-title { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 12px; }
+    .section-desc { font-size: 13px; color: var(--text-muted); font-weight: normal; margin-left: 6px; }
+
+    /* Buttons */
     .btn {
       background: var(--accent-grad);
-      color: #0b0f19;
-      font-weight: 600;
       border: none;
+      color: #090d16;
+      font-weight: 700;
       padding: 9px 18px;
       border-radius: 8px;
       cursor: pointer;
-      font-size: 14px;
-      transition: opacity 0.2s;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.2s;
     }
-    .btn:hover { opacity: 0.9; }
+    .btn:hover { opacity: 0.92; transform: translateY(-1px); }
     .btn-secondary {
-      background: rgba(255, 255, 255, 0.08);
-      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.06);
       border: 1px solid var(--card-border);
+      color: var(--text-main);
+      font-weight: 600;
     }
-    .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
     .btn-danger {
       background: rgba(239, 68, 68, 0.15);
-      color: var(--danger);
       border: 1px solid rgba(239, 68, 68, 0.3);
+      color: var(--danger);
+      font-weight: 600;
     }
-    .btn-danger:hover { background: rgba(239, 68, 68, 0.25); }
-    .account-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
+    .btn-danger:hover { background: var(--danger); color: #fff; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 6px; }
+
+    /* Account Cards Grid */
+    .account-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+      gap: 20px;
+    }
     .acc-card {
-      background: rgba(15, 23, 42, 0.65);
+      background: rgba(11, 17, 32, 0.85);
       border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 18px;
+      border-radius: 14px;
+      padding: 22px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 16px;
+      position: relative;
+      transition: all 0.2s;
     }
-    .acc-card.is-active { border-color: rgba(56, 189, 248, 0.5); box-shadow: 0 0 16px rgba(56, 189, 248, 0.1); }
-    .acc-header { display: flex; justify-content: space-between; align-items: center; }
-    .acc-name { font-size: 16px; font-weight: 700; color: #fff; }
+    .acc-card:hover { border-color: rgba(56, 189, 248, 0.4); transform: translateY(-2px); }
+    .acc-card.is-active {
+      border: 1px solid rgba(56, 189, 248, 0.5);
+      background: rgba(14, 25, 48, 0.95);
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.08);
+    }
+    .acc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .acc-title-group { display: flex; flex-direction: column; gap: 4px; }
+    .acc-name { font-size: 17px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .acc-meta { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+    
+    /* Badges */
     .badge {
       font-size: 11px;
       font-weight: 700;
-      padding: 3px 8px;
+      padding: 4px 10px;
       border-radius: 6px;
+      letter-spacing: 0.5px;
       text-transform: uppercase;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }
-    .badge-active { background: rgba(16, 185, 129, 0.2); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.3); }
-    .badge-ready { background: rgba(56, 189, 248, 0.15); color: var(--accent); }
-    .badge-cooling { background: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.3); }
-    .progress-bar-bg { background: rgba(255, 255, 255, 0.07); height: 6px; border-radius: 3px; overflow: hidden; margin-top: 4px; }
-    .progress-bar-fill { background: var(--accent-grad); height: 100%; width: 0%; transition: width 0.3s; }
-    .acc-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .badge-active { background: rgba(56, 189, 248, 0.18); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; }
+    .badge-ready { background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: var(--success); }
+    .badge-cooling { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); color: var(--warning); }
+    .badge-tier { background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); color: #c084fc; }
+    .badge-score { background: rgba(255, 255, 255, 0.06); border: 1px solid var(--card-border); }
+
+    /* Progress bar */
+    .progress-bar-bg {
+      background: rgba(255, 255, 255, 0.08);
+      height: 8px;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent-grad);
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+    .acc-details {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+    }
+    .acc-actions { display: flex; gap: 10px; margin-top: auto; }
+
+    /* Tables */
     .table-responsive { width: 100%; overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
-    th { padding: 12px 14px; color: var(--text-muted); border-bottom: 1px solid var(--card-border); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
-    td { padding: 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); color: var(--text-main); }
-    .console-input {
-      width: 100%;
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 14px;
-      color: #fff;
-      font-family: inherit;
-      font-size: 14px;
-      resize: vertical;
-      min-height: 80px;
-      margin-bottom: 12px;
+    table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+    th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--card-border);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.8px;
     }
-    .console-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 10px rgba(56, 189, 248, 0.15); }
-    .console-output {
-      background: rgba(11, 15, 25, 0.95);
-      border: 1px solid var(--card-border);
+    td { padding: 14px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); vertical-align: middle; }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+
+    /* Alert callout */
+    .alert-box {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.25);
       border-radius: 10px;
-      padding: 18px;
-      color: #e2e8f0;
-      font-family: monospace;
+      padding: 14px 18px;
       font-size: 13px;
-      white-space: pre-wrap;
-      max-height: 350px;
-      overflow-y: auto;
-      margin-top: 14px;
-      display: none;
+      color: #fde68a;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
     }
+
+    /* Code Snippets */
+    .code-box {
+      background: #050811;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.6;
+      position: relative;
+    }
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid var(--card-border);
+      color: #fff;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .copy-btn:hover { background: rgba(255, 255, 255, 0.2); }
+
+    /* Modal */
     .modal-overlay {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(6px);
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
       display: none;
       justify-content: center;
       align-items: center;
-      z-index: 200;
+      z-index: 1000;
+      padding: 20px;
     }
     .modal {
-      background: #111827;
+      background: #0f172a;
       border: 1px solid var(--card-border);
       border-radius: 16px;
-      width: 90%;
-      max-width: 500px;
+      max-width: 520px;
+      width: 100%;
       padding: 28px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
     }
     .form-group { margin-bottom: 16px; }
-    .form-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+    .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
     .form-control {
       width: 100%;
-      background: rgba(255, 255, 255, 0.05);
+      background: #0b1120;
       border: 1px solid var(--card-border);
       border-radius: 8px;
       padding: 10px 14px;
       color: #fff;
       font-size: 14px;
+      outline: none;
     }
-    .form-control:focus { outline: none; border-color: var(--accent); }
-    .code-box {
-      background: #0b0f19;
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 14px;
-      font-family: monospace;
-      font-size: 12px;
-      color: #38bdf8;
-      overflow-x: auto;
-      margin-top: 10px;
-    }
+    .form-control:focus { border-color: var(--accent); }
   </style>
 </head>
 <body>
 
   <header>
     <div class="logo-group">
-      <div class="logo-badge">AGY</div>
-      <div>
-        <div style="font-weight: 700; font-size: 15px;">Control Center</div>
-        <div style="font-size: 11px; color: var(--text-muted);">Autonomous Rust Agent & Multi-Model Gateway</div>
-      </div>
+      <div class="logo-badge">AGY MANAGER</div>
+      <div class="header-tagline">Autonomous Runtime, Credential Vault & Protocol Gateway</div>
     </div>
-    <div class="nav-links">
-      <button class="nav-btn active" onclick="scrollToSection('overview-section')">Overview</button>
-      <button class="nav-btn" onclick="scrollToSection('accounts-section')">Accounts</button>
-      <button class="nav-btn" onclick="scrollToSection('client-section')">Client Diagnostics</button>
-      <button class="nav-btn" onclick="scrollToSection('playground-section')">Staff Playground</button>
-      <button class="nav-btn" onclick="scrollToSection('audit-section')">Audit Logs</button>
-      <button class="nav-btn" onclick="scrollToSection('connect-section')">IDE Connect</button>
-    </div>
-    <div class="header-status">
+    <div class="header-actions">
       <div class="status-pill">
         <div class="dot"></div>
-        <span>Gateway Active :8080</span>
+        <span id="gateway-status-text">Gateway Online: 127.0.0.1:8080</span>
       </div>
+      <button class="btn btn-secondary" onclick="autoRotatePool()">🔄 Auto-Rotate</button>
+      <button class="btn btn-secondary" onclick="syncCliCredentials()">🔁 Sync Live CLI</button>
+      <button class="btn" onclick="openAddModal()">+ Add Account</button>
     </div>
   </header>
 
-  <div class="container" id="overview-section">
-    <!-- Top Metrics -->
+  <div class="container">
+    
+    <!-- KPI Overview Row -->
     <div class="grid-4">
       <div class="metric-card">
-        <div class="metric-title">Active Account</div>
+        <div class="metric-title">Active Swapped Profile</div>
         <div class="metric-value" id="val-active-account">None</div>
         <div class="metric-subtitle" id="val-active-model">No active provider</div>
       </div>
       <div class="metric-card">
-        <div class="metric-title">Account Pool & Quotas</div>
-        <div class="metric-value" id="val-pool-size">0 Active</div>
-        <div class="metric-subtitle" id="val-cooling-count">0 Cooling / Rate-limited</div>
+        <div class="metric-title">Pool Standbys & Health</div>
+        <div class="metric-value" id="val-pool-size">0 Accounts</div>
+        <div class="metric-subtitle" id="val-cooling-count">0 in 429 Cooldown</div>
       </div>
       <div class="metric-card">
-        <div class="metric-title">Tokens Consumed</div>
+        <div class="metric-title">Tokens Consumed (Session)</div>
         <div class="metric-value" id="val-tokens-used">0</div>
-        <div class="metric-subtitle" id="val-requests-count">0 Total Requests</div>
+        <div class="metric-subtitle" id="val-requests-count">0 Total Proxy Requests</div>
       </div>
       <div class="metric-card">
-        <div class="metric-title">Host Client Status</div>
+        <div class="metric-title">Host Client Supervisor</div>
         <div class="metric-value" id="val-client-status">Checking...</div>
         <div class="metric-subtitle" id="val-client-procs">0 Running Tasks</div>
       </div>
     </div>
 
-    <!-- Accounts Section (agy-switch, agy-auth, agy-cli-manager) -->
+    <!-- Alert / Notice Box regarding in-memory process caching -->
+    <div class="alert-box" id="process-warning-box" style="display: none;">
+      <span style="font-size: 18px;">⚠️</span>
+      <div id="process-warning-text"></div>
+    </div>
+
+    <!-- Main Panel 1: Multi-Account Pool & Credential Vault -->
     <div class="section-box" id="accounts-section">
       <div class="section-header">
         <div class="section-title">
-          <span>⚡ Multi-Account Switching, Auth & Quota Engine</span>
-          <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(agy-switch, agy-auth & agy-cli-manager Reference)</span>
+          <span>⚡ Managed Accounts & Health-Ranked Pool</span>
+          <span class="section-desc">(agm, agy-swap, agyswap, agy-cli-manager & agy-auth Reference)</span>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button class="btn btn-secondary" onclick="autoRotatePool()">🔄 Auto-Rotate</button>
-          <button class="btn btn-secondary" onclick="syncCliCredentials()">🔁 Sync CLI Token</button>
-          <button class="btn" onclick="openAddModal()">+ Add New Account</button>
+          <button class="btn btn-secondary btn-sm" onclick="fetchAccounts()">Refresh Pool</button>
+          <button class="btn btn-secondary btn-sm" onclick="exportVaultBundle()">Export Vault</button>
         </div>
       </div>
-      <div class="account-cards" id="account-cards-container">
+      <div class="account-grid" id="account-cards-container">
         <!-- Rendered via JS -->
       </div>
     </div>
 
-    <!-- Client Diagnostics Section (AntigravityManager) -->
+    <!-- Main Panel 2: Universal Local Proxy Router (agy-proxy & agy-argon-bridge) -->
+    <div class="section-box" id="proxy-section">
+      <div class="section-header">
+        <div class="section-title">
+          <span>🌐 Local API Gateway & Model Router</span>
+          <span class="section-desc">(agy-proxy & LilZeeCN/agy-argon-bridge Reference)</span>
+        </div>
+        <span class="badge badge-ready">HTTP / CORS READY</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+        <div class="code-box">
+          <div style="font-weight: 700; color: #fff; margin-bottom: 6px;">Supported Protocol Translation Endpoints:</div>
+          • <strong>OpenAI Format:</strong> <code>POST /v1/chat/completions</code> &amp; <code>GET /v1/models</code><br>
+          • <strong>Claude Format:</strong> <code>POST /v1/messages</code> (Claude Code, Continue)<br>
+          • <strong>Gemini / Argon Bridge:</strong> <code>POST /v1beta/models/{model}:generateContent</code><br>
+          • <strong>Telemetry &amp; Health:</strong> <code>GET /health</code> &amp; <code>GET /status</code>
+        </div>
+        <div class="code-box">
+          <div style="font-weight: 700; color: #fff; margin-bottom: 6px;">Reasoning Model Bridge (Argon Bridge):</div>
+          • <strong>Target Model:</strong> <code>gemini-4-argon</code> / <code>gemini-2.0-flash-thinking</code><br>
+          • <strong>Streaming Keep-Alive:</strong> Heartbeat SSE comments (prevents timeout)<br>
+          • <strong>Failover Engine:</strong> Auto 429 cooling with instant standby swap
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
+        <div class="code-box">
+          <button class="copy-btn" onclick="copySnippet('cursor-snippet')">Copy</button>
+          <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px;">Cursor &amp; Windsurf Config:</div>
+          <span id="cursor-snippet">Base URL: http://127.0.0.1:8080/v1
+API Key:  any-key (managed by active profile)
+Model:    gemini-4-argon or claude-3-5-sonnet</span>
+        </div>
+        <div class="code-box">
+          <button class="copy-btn" onclick="copySnippet('curl-snippet')">Copy</button>
+          <div style="color: #38bdf8; font-weight: 600; margin-bottom: 6px;">Quick cURL Test:</div>
+          <span id="curl-snippet">curl http://127.0.0.1:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gemini-4-argon","messages":[{"role":"user","content":"Ping"}]}'</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Panel 3: Host Client Supervisor & Process Monitor -->
     <div class="section-box" id="client-section">
       <div class="section-header">
         <div class="section-title">
-          <span>🖥️ Client & Process Inspector</span>
-          <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(AntigravityManager Reference)</span>
+          <span>🖥️ Host Client Supervisor &amp; Process Telemetry</span>
+          <span class="section-desc">(AntigravityManager &amp; agy-swap Process Tracker)</span>
         </div>
-        <button class="btn btn-secondary" onclick="fetchClientStatus()">Refresh Diagnostics</button>
+        <button class="btn btn-secondary btn-sm" onclick="fetchClientStatus()">Inspect Processes</button>
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-        <div style="background: rgba(15, 23, 42, 0.65); padding: 18px; border-radius: 12px; border: 1px solid var(--card-border);">
-          <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">CLIENT INSTALLATION</div>
-          <div id="client-install-details" style="font-size: 14px; line-height: 1.6;">Scanning system...</div>
+        <div style="background: rgba(11, 17, 32, 0.85); padding: 18px; border-radius: 12px; border: 1px solid var(--card-border);">
+          <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase;">Client Binary &amp; Environment</div>
+          <div id="client-install-details" style="font-size: 13px; line-height: 1.8;">Scanning system environment...</div>
         </div>
-        <div style="background: rgba(15, 23, 42, 0.65); padding: 18px; border-radius: 12px; border: 1px solid var(--card-border);">
-          <div style="font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">ACTIVE PROCESSES</div>
-          <div id="client-procs-details" style="font-size: 14px; line-height: 1.6;">Detecting running tasks...</div>
+        <div style="background: rgba(11, 17, 32, 0.85); padding: 18px; border-radius: 12px; border: 1px solid var(--card-border);">
+          <div style="font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase;">Running Host Client Tasks</div>
+          <div id="client-procs-details" style="font-size: 13px; line-height: 1.8;">Detecting active processes...</div>
         </div>
       </div>
     </div>
 
-    <!-- Staff Interactive Playground (agy-staff) -->
-    <div class="section-box" id="playground-section">
+    <!-- Main Panel 4: Credential Backups Vault -->
+    <div class="section-box" id="backup-section">
       <div class="section-header">
         <div class="section-title">
-          <span>🤖 AI Staff Companion Playground</span>
-          <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(agy-staff Reference with Git Safety)</span>
+          <span>🔐 Pre-Switch Credential Backups Vault</span>
+          <span class="section-desc">(.agy/auth_backups/ with SHA-256 Fingerprints)</span>
         </div>
-        <div style="display: flex; gap: 10px;">
-          <select id="staff-role-select" class="form-control" style="width: auto;">
-            <option value="ask">Role: Ask (Direct Q&A)</option>
-            <option value="research">Role: Researcher (Read-only)</option>
-            <option value="review">Role: Reviewer (Diff Review)</option>
-            <option value="implement">Role: Implementer (Code)</option>
-          </select>
-          <select id="staff-preset-select" class="form-control" style="width: auto;">
-            <option value="Uncensored">Preset: Uncensored</option>
-            <option value="Aggressive" selected>Preset: Aggressive</option>
-            <option value="Heretic">Preset: Heretic</option>
-            <option value="Unrestricted">Preset: Unrestricted</option>
-            <option value="Unleashed">Preset: Unleashed</option>
-          </select>
-        </div>
+        <button class="btn btn-secondary btn-sm" onclick="fetchBackups()">Refresh Backups</button>
       </div>
-      <textarea id="staff-prompt-input" class="console-input" placeholder="Enter task objective, query, or instruction (e.g., 'Inspect crypto modules and check SHA-256 implementation')..."></textarea>
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 12px; color: var(--text-muted);">Press Send to execute via active account and sandbox engine.</span>
-        <button class="btn" onclick="executeStaffTask()" id="btn-staff-submit">Run Staff Companion</button>
+      <div class="table-responsive">
+        <table>
+          <thead>
+            <tr>
+              <th>Backup File</th>
+              <th>Target Path</th>
+              <th>File Size</th>
+              <th>SHA-256 Fingerprint</th>
+              <th>Created Timestamp</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="backups-table-body">
+            <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Loading backup vault records...</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div id="staff-console-output" class="console-output"></div>
     </div>
 
-    <!-- Live Audit Log Stream -->
+    <!-- Main Panel 5: Tamper-Evident Audit Stream -->
     <div class="section-box" id="audit-section">
       <div class="section-header">
         <div class="section-title">
-          <span>🛡️ Tamper-Evident Audit Stream</span>
-          <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(.agy/audit.jsonl)</span>
+          <span>🛡️ Tamper-Evident Audit Event Stream</span>
+          <span class="section-desc">(.agy/audit.jsonl Append-Only Security Log)</span>
         </div>
-        <button class="btn btn-secondary" onclick="fetchAuditLogs()">Refresh Logs</button>
+        <button class="btn btn-secondary btn-sm" onclick="fetchAuditLogs()">Refresh Audit</button>
       </div>
       <div class="table-responsive">
         <table>
           <thead>
             <tr>
               <th>Timestamp</th>
-              <th>Preset</th>
+              <th>Actor</th>
               <th>Event Type</th>
-              <th>Details</th>
+              <th>Audit Payload (Redacted)</th>
             </tr>
           </thead>
           <tbody id="audit-table-body">
-            <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading audit logs...</td></tr>
+            <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading audit records...</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- Connect IDE Section (agy2api) -->
-    <div class="section-box" id="connect-section">
-      <div class="section-header">
-        <div class="section-title">
-          <span>🔌 Connect Cursor / Cline / Continue / Aider</span>
-          <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(agy2api Reference)</span>
-        </div>
-      </div>
-      <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 14px;">
-        Point any developer harness or IDE extension to this local gateway to access multi-provider load balancing and 429 cooling:
-      </p>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-        <div>
-          <div style="font-size: 13px; font-weight: 600; color: #fff;">Cursor / OpenAI Client Configuration</div>
-          <div class="code-box">Base URL: http://127.0.0.1:8080/v1<br>API Key:  any-key (managed by active profile)<br>Model:    gpt-4o or claude-3-5-sonnet</div>
-        </div>
-        <div>
-          <div style="font-size: 13px; font-weight: 600; color: #fff;">cURL Quick Test</div>
-          <div class="code-box">curl http://127.0.0.1:8080/v1/chat/completions \<br>&nbsp;&nbsp;-H "Content-Type: application/json" \<br>&nbsp;&nbsp;-d '{"model":"gpt-4o","messages":[{"role":"user","content":"Hello"}]}'</div>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- Add Account Modal -->
   <div class="modal-overlay" id="add-modal">
     <div class="modal">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
-        <h3 style="font-size: 17px; font-weight: 700;">Add New Model Account</h3>
-        <button style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px;" onclick="closeAddModal()">&times;</button>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="font-size: 18px; font-weight: 700;">Add Model Account to Vault</h3>
+        <button style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 22px;" onclick="closeAddModal()">&times;</button>
       </div>
       <div class="form-group">
-        <label>Account Name / Nickname</label>
-        <input type="text" id="add-name" class="form-control" placeholder="e.g. Anthropic-Work, OpenAI-Main, Google-Personal">
+        <label>Account Name / Alias</label>
+        <input type="text" id="add-name" class="form-control" placeholder="e.g. Google-Argon, Claude-Work, OpenAI-Pro">
       </div>
       <div class="form-group">
-        <label>Email / Identity (Optional)</label>
-        <input type="email" id="add-email" class="form-control" placeholder="e.g. engineer@company.com">
+        <label>Email Identity (Optional)</label>
+        <input type="email" id="add-email" class="form-control" placeholder="e.g. developer@corp.com">
       </div>
       <div class="form-group">
         <label>Plan Tier</label>
@@ -435,6 +528,7 @@
       <div class="form-group">
         <label>Provider Type</label>
         <select id="add-provider" class="form-control">
+          <option value="antigravity">Google Antigravity / Argon Bridge</option>
           <option value="claude">Anthropic Claude</option>
           <option value="openai">OpenAI</option>
           <option value="gemini">Google Gemini</option>
@@ -444,12 +538,12 @@
         </select>
       </div>
       <div class="form-group">
-        <label>API Key / Token</label>
-        <input type="password" id="add-key" class="form-control" placeholder="sk-...">
+        <label>API Key / OAuth Token</label>
+        <input type="password" id="add-key" class="form-control" placeholder="sk-... or ya29....">
       </div>
       <div class="form-group">
         <label>Default Model</label>
-        <input type="text" id="add-model" class="form-control" placeholder="e.g. claude-3-5-sonnet, gpt-4o">
+        <input type="text" id="add-model" class="form-control" placeholder="e.g. gemini-4-argon, claude-3-5-sonnet, gpt-4o">
       </div>
       <div class="form-group">
         <label>Custom Base URL (Optional)</label>
@@ -459,9 +553,9 @@
         <label>Quota Limit in Tokens (Optional)</label>
         <input type="number" id="add-quota" class="form-control" placeholder="e.g. 500000">
       </div>
-      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
         <button class="btn btn-secondary" onclick="closeAddModal()">Cancel</button>
-        <button class="btn" onclick="submitAddAccount()">Save Account</button>
+        <button class="btn" onclick="submitAddAccount()">Save Account Profile</button>
       </div>
     </div>
   </div>
@@ -487,7 +581,7 @@
       let coolingCount = 0;
 
       if (!accounts || accounts.length === 0) {
-        container.innerHTML = '<div style="color: var(--text-muted); font-size: 14px;">No accounts registered. Click "+ Add New Account" to add one.</div>';
+        container.innerHTML = '<div style="color: var(--text-muted); font-size: 14px; grid-column: 1 / -1;">No accounts registered in vault. Click "+ Add Account" or "🔁 Sync Live CLI" to import.</div>';
         document.getElementById('val-active-account').innerText = 'None';
         document.getElementById('val-active-model').innerText = 'No provider configured';
         document.getElementById('val-pool-size').innerText = '0 Accounts';
@@ -498,18 +592,18 @@
         totalTokens += (a.quota_used || 0);
         totalReqs += (a.request_count || 0);
         if (a.is_active) activeAcc = a;
-        if (a.cooldown_until && new Date(a.cooldown_until) > new Date()) coolingCount++;
+        if (a.status && a.status.toLowerCase().includes('cooling')) coolingCount++;
 
         const card = document.createElement('div');
         card.className = 'acc-card' + (a.is_active ? ' is-active' : '');
 
         let statusBadge = '';
         if (a.is_active) {
-          statusBadge = '<span class="badge badge-active">ACTIVE</span>';
-        } else if (a.cooldown_until && new Date(a.cooldown_until) > new Date()) {
-          statusBadge = '<span class="badge badge-cooling">COOLING (429)</span>';
+          statusBadge = '<span class="badge badge-active">● ACTIVE</span>';
+        } else if (a.status && a.status.toLowerCase().includes('cooling')) {
+          statusBadge = '<span class="badge badge-cooling">● COOLING (429)</span>';
         } else {
-          statusBadge = '<span class="badge badge-ready">READY</span>';
+          statusBadge = `<span class="badge badge-ready">#${a.rank} STANDBY</span>`;
         }
 
         const healthScore = a.health_score !== undefined ? a.health_score : 100;
@@ -517,45 +611,50 @@
         if (healthScore < 50) healthColor = '#ef4444';
         else if (healthScore < 80) healthColor = '#f59e0b';
 
-        const tierBadge = `<span style="font-size: 11px; padding: 2px 7px; border-radius: 4px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.25); color: #38bdf8; font-weight: 600; text-transform: uppercase;">${escapeHtml(a.plan_tier || 'Standard')}</span>`;
-        const healthBadge = `<span style="font-size: 11px; padding: 2px 7px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: ${healthColor}; font-weight: 600;">Health: ${healthScore}/100</span>`;
+        const tierBadge = `<span class="badge badge-tier">${escapeHtml(a.plan_tier || 'Standard')}</span>`;
+        const healthBadge = `<span class="badge badge-score" style="color: ${healthColor};">Health: ${healthScore}/100</span>`;
 
         const quotaLimit = a.quota_limit || 0;
         const used = a.quota_used || 0;
         const pct = quotaLimit > 0 ? Math.min(100, Math.round((used / quotaLimit) * 100)) : 0;
-        const quotaText = quotaLimit > 0 ? `${used.toLocaleString()} / ${quotaLimit.toLocaleString()} tokens (${pct}%)` : `${used.toLocaleString()} tokens used (Unlimited)`;
-        const keyDisplay = a.masked_key || (a.api_key ? (a.api_key.substring(0, 4) + '...' + a.api_key.substring(Math.max(0, a.api_key.length - 4))) : '********');
+        const quotaText = quotaLimit > 0 ? `${used.toLocaleString()} / ${quotaLimit.toLocaleString()} (${pct}%)` : `${used.toLocaleString()} tokens used (Unlimited)`;
+        const keyDisplay = a.masked_key || '********';
 
         card.innerHTML = `
           <div class="acc-header">
-            <div>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <span class="acc-name">${escapeHtml(a.name)}</span>
+            <div class="acc-title-group">
+              <div class="acc-name">
+                <span>${escapeHtml(a.name)}</span>
                 ${tierBadge}
               </div>
-              <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; margin-top: 2px;">
-                ${escapeHtml(a.provider)} • ${escapeHtml(a.model || 'default')}
-                ${a.email ? ` • <span style="color: #cbd5e1; text-transform: none;">${escapeHtml(a.email)}</span>` : ''}
+              <div class="acc-meta">
+                <span style="color: #cbd5e1; text-transform: uppercase; font-weight: 600;">${escapeHtml(a.provider)}</span>
+                <span>•</span>
+                <span>${escapeHtml(a.email || a.model || 'default')}</span>
               </div>
             </div>
-            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
               ${statusBadge}
               ${healthBadge}
             </div>
           </div>
+
           <div>
-            <div style="font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between;">
-              <span>Quota Used</span>
-              <span>${quotaText}</span>
+            <div style="font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span>Quota Consumption</span>
+              <span style="font-weight: 600; color: ${pct >= 90 ? '#ef4444' : '#cbd5e1'};">${quotaText}</span>
             </div>
-            ${quotaLimit > 0 ? `<div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${pct}%"></div></div>` : ''}
+            ${quotaLimit > 0 ? `<div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${pct}%; background: ${pct >= 90 ? '#ef4444' : 'var(--accent-grad)'};"></div></div>` : ''}
           </div>
-          <div style="font-size: 12px; color: var(--text-muted);">
-            Key: <span style="font-family: monospace;">${escapeHtml(keyDisplay)}</span> • Requests: ${a.request_count || 0} • Errors: ${a.error_count || 0}
+
+          <div class="acc-details">
+            <div><strong>Token Fingerprint:</strong> <code style="font-family: monospace;">${escapeHtml(keyDisplay)}</code></div>
+            <div><strong>Telemetry:</strong> Requests: <strong>${a.request_count || 0}</strong> | Errors: <strong>${a.error_count || 0}</strong> | Status: <strong>${escapeHtml(a.status || 'Ready')}</strong></div>
           </div>
+
           <div class="acc-actions">
-            ${!a.is_active ? `<button class="btn btn-secondary" style="flex: 1; padding: 6px;" onclick="switchAccount('${escapeHtml(a.name)}')">Set Active</button>` : `<button class="btn" style="flex: 1; padding: 6px;" disabled>Active</button>`}
-            <button class="btn btn-danger" style="padding: 6px 12px;" onclick="deleteAccount('${escapeHtml(a.name)}')">Delete</button>
+            ${!a.is_active ? `<button class="btn btn-secondary btn-sm" style="flex: 1;" onclick="swapAccount('${escapeHtml(a.name)}')">⚡ Swap to Active</button>` : `<button class="btn btn-sm" style="flex: 1;" disabled>✓ Currently Active</button>`}
+            <button class="btn btn-danger btn-sm" onclick="deleteAccount('${escapeHtml(a.name)}')">Delete</button>
           </div>
         `;
         container.appendChild(card);
@@ -566,39 +665,40 @@
         document.getElementById('val-active-model').innerText = `${activeAcc.provider} • ${activeAcc.model || 'default'}`;
       } else {
         document.getElementById('val-active-account').innerText = 'None';
-        document.getElementById('val-active-model').innerText = 'Click Set Active on an account';
+        document.getElementById('val-active-model').innerText = 'Click Swap to activate an account';
       }
 
-      document.getElementById('val-pool-size').innerText = `${accounts.length} Total`;
-      document.getElementById('val-cooling-count').innerText = `${coolingCount} in 429 Cooldown`;
+      document.getElementById('val-pool-size').innerText = `${accounts.length} Profiles`;
+      document.getElementById('val-cooling-count').innerText = `${coolingCount} Cooling (429)`;
       document.getElementById('val-tokens-used').innerText = totalTokens.toLocaleString();
-      document.getElementById('val-requests-count').innerText = `${totalReqs} Total Requests`;
+      document.getElementById('val-requests-count').innerText = `${totalReqs} Total Proxy Requests`;
     }
 
-    async function switchAccount(name) {
+    async function swapAccount(name) {
       try {
-        await fetch('/api/accounts/switch', {
+        const res = await fetch('/api/auth/switch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id_or_name: name })
+          body: JSON.stringify({ id_or_name: name, target: 'both' })
         });
-        fetchAccounts();
-      } catch (e) {
-        alert('Failed to switch account: ' + e);
-      }
-    }
+        const data = await res.json();
+        if (!res.ok) {
+          alert('Switch failed: ' + (data.error || 'Unknown error'));
+          return;
+        }
 
-    async function deleteAccount(name) {
-      if (!confirm(`Are you sure you want to remove account "${name}"?`)) return;
-      try {
-        await fetch('/api/accounts/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id_or_name: name })
-        });
+        if (data.report && data.report.warning) {
+          const warnBox = document.getElementById('process-warning-box');
+          const warnText = document.getElementById('process-warning-text');
+          warnText.innerText = data.report.warning;
+          warnBox.style.display = 'flex';
+        }
+
         fetchAccounts();
+        fetchBackups();
+        fetchAuditLogs();
       } catch (e) {
-        alert('Failed to delete account: ' + e);
+        alert('Failed to swap account: ' + e);
       }
     }
 
@@ -611,11 +711,12 @@
         });
         const data = await res.json();
         if (data.rotated) {
-          alert(`Auto-Rotation Successful!\nRotated From: ${data.rotation.from}\nRotated To: ${data.rotation.to}\nReason: ${data.rotation.reason}`);
+          alert(`Auto-Rotation Executed!\nSwapped from ${data.rotation.from} to ${data.rotation.to}\nReason: ${data.rotation.reason}`);
         } else {
-          alert(data.message || 'Active account is healthy. No rotation needed.');
+          alert(data.message || 'Active account is healthy. No rotation required.');
         }
         fetchAccounts();
+        fetchBackups();
         fetchAuditLogs();
       } catch (e) {
         alert('Auto-rotation request failed: ' + e);
@@ -630,12 +731,26 @@
         });
         const data = await res.json();
         if (data.report) {
-          alert(`CLI Synchronization:\nAction: ${data.report.action_taken}\nActive Account: ${data.report.active_account_name}`);
+          alert(`CLI Synchronization:\nAction: ${data.report.action_taken}\nActive Profile: ${data.report.active_account_name}`);
         }
         fetchAccounts();
         fetchAuditLogs();
       } catch (e) {
         alert('CLI sync request failed: ' + e);
+      }
+    }
+
+    async function deleteAccount(name) {
+      if (!confirm(`Are you sure you want to remove profile "${name}" from the vault?`)) return;
+      try {
+        await fetch('/api/accounts/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id_or_name: name })
+        });
+        fetchAccounts();
+      } catch (e) {
+        alert('Failed to delete account: ' + e);
       }
     }
 
@@ -654,7 +769,7 @@
       const quota = quotaStr ? parseInt(quotaStr) : null;
 
       if (!name || !key) {
-        alert('Name and API Key are required.');
+        alert('Name and API Key/Token are required.');
         return;
       }
 
@@ -666,7 +781,7 @@
         });
         if (!res.ok) {
           const err = await res.json();
-          alert('Error: ' + (err.error || 'Failed to save'));
+          alert('Error: ' + (err.error || 'Failed to save account'));
           return;
         }
         closeAddModal();
@@ -682,108 +797,140 @@
         const report = await res.json();
 
         document.getElementById('val-client-status').innerText = report.installed ? 'Installed' : 'Standalone';
-        document.getElementById('val-client-procs').innerText = `${report.running_processes ? report.running_processes.length : 0} Running Processes`;
+        document.getElementById('val-client-procs').innerText = `${report.running_processes ? report.running_processes.length : 0} Running Tasks`;
 
         const installDiv = document.getElementById('client-install-details');
         installDiv.innerHTML = `
-          <div><strong>Status:</strong> ${report.installed ? '<span style="color: var(--success);">Installed</span>' : '<span style="color: var(--warning);">Standalone / Not Found</span>'}</div>
-          <div><strong>Binary:</strong> <code>${escapeHtml(report.binary_path || 'None')}</code></div>
-          <div><strong>Version:</strong> ${escapeHtml(report.version || 'N/A')}</div>
-          <div><strong>Gateway Port:</strong> 8080 (Connected)</div>
+          <div><strong>Status:</strong> ${report.installed ? '<span style="color: var(--success); font-weight: 700;">✓ INSTALLED ON HOST</span>' : '<span style="color: var(--warning); font-weight: 700;">! STANDALONE / CUSTOM PATH</span>'}</div>
+          <div><strong>Detected Binary:</strong> <code style="font-family: monospace;">${escapeHtml(report.binary_path || 'None')}</code></div>
+          <div><strong>Reported Version:</strong> ${escapeHtml(report.version || 'Antigravity CLI / AGY Standalone')}</div>
+          <div><strong>Supervisor Gateway Port:</strong> 8080 (Listening)</div>
         `;
 
         const procsDiv = document.getElementById('client-procs-details');
         if (report.running_processes && report.running_processes.length > 0) {
-          procsDiv.innerHTML = report.running_processes.map(p => `<div>• <strong>PID ${p.pid}:</strong> ${escapeHtml(p.name)} (${p.status})</div>`).join('');
+          procsDiv.innerHTML = report.running_processes.map(p => `<div>• <strong>PID ${p.pid}:</strong> <code style="color: #38bdf8;">${escapeHtml(p.name)}</code> (${p.status})</div>`).join('');
+          
+          const warnBox = document.getElementById('process-warning-box');
+          const warnText = document.getElementById('process-warning-text');
+          warnText.innerHTML = `<strong>Active Processes Detected:</strong> Found ${report.running_processes.length} running Antigravity instance(s). Remember that the CLI caches OAuth tokens at startup in memory; restart your active terminal to load newly swapped credentials.`;
+          warnBox.style.display = 'flex';
         } else {
-          procsDiv.innerHTML = '<div style="color: var(--text-muted);">No client processes detected.</div>';
+          procsDiv.innerHTML = '<div style="color: var(--text-muted);">No active client processes running currently.</div>';
+          document.getElementById('process-warning-box').style.display = 'none';
         }
       } catch (e) {
-        console.error('Failed to fetch client diagnostics', e);
+        console.error('Failed to fetch client status', e);
+      }
+    }
+
+    async function fetchBackups() {
+      try {
+        const res = await fetch('/api/auth/backups');
+        const backups = await res.json();
+        const tbody = document.getElementById('backups-table-body');
+        tbody.innerHTML = '';
+
+        if (!backups || backups.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No credential backups recorded yet. Backups are automatically created before every account swap.</td></tr>';
+          return;
+        }
+
+        backups.forEach(b => {
+          const tr = document.createElement('tr');
+          const shaShort = b.sha256 ? b.sha256.substring(0, 8) : 'N/A';
+          tr.innerHTML = `
+            <td><strong>${escapeHtml(b.filename)}</strong></td>
+            <td><code style="font-size: 11px;">${escapeHtml(b.target)}</code></td>
+            <td>${(b.file_size || 0).toLocaleString()} B</td>
+            <td><code style="color: var(--accent);">${escapeHtml(shaShort)}</code></td>
+            <td>${new Date(b.created_at).toLocaleString()}</td>
+            <td><button class="btn btn-secondary btn-sm" onclick="restoreBackup('${escapeHtml(b.path)}')">Restore</button></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        console.error('Failed to fetch backups', e);
+      }
+    }
+
+    async function restoreBackup(filePath) {
+      if (!confirm(`Restore live credentials from backup "${filePath}"?`)) return;
+      try {
+        const res = await fetch('/api/auth/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: filePath, target: 'both' })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert('Restored credentials successfully!');
+          fetchAccounts();
+          fetchAuditLogs();
+        } else {
+          alert('Restore failed: ' + (data.error || 'Unknown error'));
+        }
+      } catch (e) {
+        alert('Restore request failed: ' + e);
       }
     }
 
     async function fetchAuditLogs() {
       try {
         const res = await fetch('/api/audit');
-        const logs = await res.json();
+        const events = await res.json();
         const tbody = document.getElementById('audit-table-body');
         tbody.innerHTML = '';
-        if (!logs || logs.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No audit records yet.</td></tr>';
+
+        if (!events || events.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No audit records logged yet.</td></tr>';
           return;
         }
-        logs.slice(-15).reverse().forEach(ev => {
-          const row = document.createElement('tr');
-          row.innerHTML = `
-            <td style="color: var(--text-muted); font-family: monospace;">${escapeHtml(ev.timestamp.split('T')[1] || ev.timestamp)}</td>
-            <td><span class="badge badge-ready">${escapeHtml(ev.preset)}</span></td>
+
+        events.slice(-15).reverse().forEach(ev => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="color: var(--text-muted); font-size: 11px;">${new Date(ev.timestamp).toLocaleTimeString()}</td>
+            <td><span class="badge badge-active">${escapeHtml(ev.preset || 'SYSTEM')}</span></td>
             <td><strong>${escapeHtml(ev.event_type)}</strong></td>
-            <td style="font-family: monospace; font-size: 11px;">${escapeHtml(JSON.stringify(ev.details))}</td>
+            <td><code style="font-size: 11px; color: #cbd5e1;">${escapeHtml(JSON.stringify(ev.details))}</code></td>
           `;
-          tbody.appendChild(row);
+          tbody.appendChild(tr);
         });
       } catch (e) {
         console.error('Failed to fetch audit logs', e);
       }
     }
 
-    async function executeStaffTask() {
-      const prompt = document.getElementById('staff-prompt-input').value.trim();
-      const role = document.getElementById('staff-role-select').value;
-      const preset = document.getElementById('staff-preset-select').value;
-      const outDiv = document.getElementById('staff-console-output');
-      const btn = document.getElementById('btn-staff-submit');
-
-      if (!prompt) {
-        alert('Please enter a prompt or task objective.');
-        return;
-      }
-
-      btn.disabled = true;
-      btn.innerText = 'Executing Staff Companion...';
-      outDiv.style.display = 'block';
-      outDiv.innerText = `[Running Role: ${role} | Preset: ${preset}] Executing task...\n`;
-
-      try {
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, role, preset })
-        });
-        const data = await res.json();
-        if (data.error) {
-          outDiv.innerText += `\n[ERROR]: ${data.error.message || JSON.stringify(data.error)}`;
-        } else {
-          outDiv.innerText = data.response || data.choices?.[0]?.message?.content || JSON.stringify(data);
-        }
-      } catch (e) {
-        outDiv.innerText += `\n[REQUEST FAILED]: ${e}`;
-      } finally {
-        btn.disabled = false;
-        btn.innerText = 'Run Staff Companion';
-        fetchAccounts();
-        fetchAuditLogs();
-      }
+    function copySnippet(elementId) {
+      const text = document.getElementById(elementId).innerText;
+      navigator.clipboard.writeText(text).then(() => {
+        alert('Copied configuration snippet to clipboard!');
+      });
     }
 
-    function scrollToSection(id) {
-      document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+    function exportVaultBundle() {
+      window.open('/api/accounts', '_blank');
     }
 
     function escapeHtml(str) {
       if (!str) return '';
-      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
     }
 
-    // Auto-refresh data every 6 seconds
+    // Auto-refresh loops
     fetchAccounts();
     fetchClientStatus();
+    fetchBackups();
     fetchAuditLogs();
-    setInterval(() => {
-      fetchAccounts();
-      fetchAuditLogs();
-    }, 6000);
+    setInterval(fetchAccounts, 8000);
+    setInterval(fetchClientStatus, 10000);
+    setInterval(fetchAuditLogs, 12000);
   </script>
 </body>
 </html>

@@ -257,17 +257,36 @@ flowchart LR
    agy-agent auth backups
    ```
 
-10. **Universal Local API Gateway Server (`serve`):**
-    Expose standard OpenAI, Claude, and Gemini API endpoints for local IDE extensions (Cursor, Cline, Continue, Aider):
+10. **Instant 1-Step Account Swap & Process Memory Warning (`swap`):**
+    One-step profile switching with automated pre-switch backups and active process memory inspection (inspired by `agy-swap` and `agyswap`):
+    ```bash
+    # Instant profile switch with automated backup and PID check
+    agy-agent swap Google-Work
+    agy-agent swap Personal --target cli
+    ```
+    *Advisory:* If an Antigravity CLI process is running during the swap, a warning is printed reminding users that active CLI terminals cache OAuth tokens in memory upon startup and must be restarted.
+
+11. **Antigravity Manager (AGM) Unified Operations (`agm`):**
+    Complete Antigravity Manager command suite (`shyim/agm` parity):
+    ```bash
+    agy-agent agm list
+    agy-agent agm switch Google-Work --target both
+    agy-agent agm rotate --threshold 90.0
+    agy-agent agm rank
+    agy-agent agm backups
+    agy-agent agm restore .agy/auth_backups/<file>.bak
+    ```
+
+12. **Universal Local API Gateway & Argon Bridge (`serve`):**
+    Expose standard OpenAI (`/v1/chat/completions`), Claude (`/v1/messages`), and Gemini (`/v1beta/models/...`) endpoints for local IDE extensions (Cursor, Windsurf, Cline, Continue, Aider):
     ```bash
     agy-agent serve --port 8080 --host 127.0.0.1
     ```
-    Configure your IDE tool with:
-    - **Base URL:** `http://127.0.0.1:8080/v1`
-    - **API Key:** `any-key` (or managed by active account)
-    - **Model:** `gpt-4o` or `claude-3-5-sonnet`
+    - **Argon Reasoning Router (`agy-argon-bridge`):** Seamless upstream support for `gemini-4-argon` and `gemini-2.0-flash-thinking` with keep-alive streaming heartbeats.
+    - **Proxy Telemetry (`agy-proxy`):** Real-time `/api/proxy/stats` tracking requests, tokens, cooling accounts, and errors.
+    - **Credential Restoration:** `/api/auth/restore` endpoint for 1-click restore from backups.
 
-11. **AI Staffer Delegation & Git Safety Guardrail (`staff`):**
+13. **AI Staffer Delegation & Git Safety Guardrail (`staff`):**
     Deploy specialized companion roles for code exploration, review, and editing:
     ```bash
     # Q&A grounded in codebase
@@ -285,32 +304,32 @@ flowchart LR
     agy-agent staff implement "Quick fix" --force
     ```
 
-12. **Host Client & Process Inspector (`client`):**
+14. **Host Client & Process Inspector (`client`):**
     Detect installed desktop/CLI clients, versions, running processes, and gateway telemetry:
     ```bash
     agy-agent client detect
     agy-agent client status
     ```
 
-13. **Embedded Web UI/UX Dashboard (`dashboard` & `serve --open`):**
-    Launch the full-featured, local browser dashboard for real-time monitoring and control:
+15. **Enterprise AGY Manager & Operations Console (`dashboard` & `serve --open`):**
+    Launch the dedicated local browser operations console for real-time monitoring, credential pooling, process supervision, and proxy routing (**strictly zero chat or conversational UI components**):
     ```bash
-    # Open dashboard directly in default web browser
+    # Open AGY Manager console in default web browser
     agy-agent dashboard
 
     # Run on custom port/host
     agy-agent dashboard --port 8080 --host 127.0.0.1
 
-    # Start gateway with browser dashboard auto-launch
+    # Start gateway with manager dashboard auto-launch
     agy-agent serve --open
     ```
-    The Web UI/UX provides:
-    - **Live System Cards:** Active model/provider display, request counts, errors, quota utilization %, and 429 cooling indicators.
-    - **Multi-Account Manager:** Visual card deck of all registered providers. Switch active keys in 1 click, track token budgets with progress bars, and add new providers via modal dialog.
-    - **Host Client Diagnostics:** Automatic detection of installed AGY/Antigravity host installations, executable paths, detected versions, running PIDs, and live port reachability.
-    - **AI Staff Playground:** Interactive browser chat with companion role switcher (`Ask`, `Researcher`, `Reviewer`, `Implementer`) and security presets.
-    - **Tamper-Evident Audit Feed:** Streaming event viewer of `.agy/audit.jsonl` with timestamped tool calls and automated credential redaction.
-    - **Quick Connect Snippets:** One-click copy configs for Cursor, Cline, Continue, Aider, Python, and curl.
+    The AGY Manager Console provides:
+    - **Top Executive KPI Bar:** Live indicators for Active Credential Profile, Pool Health & Standby count, Proxy Throughput/Tokens, and Host Antigravity Client installation status.
+    - **Multi-Account Credential Pool & Vault:** Visual cards with dynamic Health Score badges (0–100), Plan Tiers (`Free`, `Pro`, `Ultra`, `Enterprise`), token fingerprints, live quota usage progress bars (color-coded amber/red at $\ge 90\%$), and 1-click **"⚡ Swap to Active"** and **"Delete"** actions.
+    - **Host Process Supervisor & Memory Cache Advisory:** Live table of running Antigravity client processes (PIDs, status, path), paired with real-time warnings alerting developers to restart terminals if in-memory token caching is active.
+    - **Local Proxy Router & Argon Bridge:** Full protocol translation table (`/v1/chat/completions`, `/v1/messages`, `/v1beta/models/...`), upstream Argon reasoning support, and 1-click copy configuration snippets for Cursor, Windsurf, Cline, Continue, and cURL.
+    - **Pre-Switch Credential Backups Vault:** Live inspection of historical backups in `.agy/auth_backups/` with cryptographic SHA-256 fingerprints, file sizes, timestamps, and 1-click **"Restore"** actions.
+    - **Tamper-Evident Security Audit Stream:** Real-time log of security events from `.agy/audit.jsonl` with timestamps, action categories, and redacted credentials.
 
 ---
 
