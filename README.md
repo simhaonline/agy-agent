@@ -349,26 +349,47 @@ agy-agent audit
 agy-agent audit --limit 50
 ```
 
-#### 9. Multi-Account Management & Quota Engine (`account`)
-Manage multiple API accounts, custom endpoints, quota ceilings, and rate-limiting cooldown states (inspired by `agy-switch`, implemented from scratch in pure Rust):
+#### 9. Multi-Account Management, Quota Engine & Auth Synchronizer (`account` & `auth`)
+Manage multiple API accounts, live Antigravity CLI credentials, automatic pre-switch backups, intelligent health-ranked pool rotation, and bidirectional CLI/Desktop synchronization (inspired by `agy-switch`, `fikrilal/agy-auth`, and `zcop/agy-cli-manager`, built from scratch in pure Rust):
 ```bash
-# List all configured accounts, active status, cooldown, and masked keys
+# 1. List accounts with dynamic Health Scores, Plan Tiers (Free, Pro, Ultra, Enterprise), and Quota usage
+agy-agent auth list
 agy-agent account list
 
-# Register a new account profile (supports OpenAI, Claude, Gemini, DeepSeek, Ollama, etc.)
-agy-agent account add --name "Claude-Work" --provider "claude" --key "sk-ant-api03-..." --model "claude-3-5-sonnet" --quota 250000
+# 2. Seamlessly switch active credentials across CLI, Desktop, or both with automated pre-switch backup
+agy-agent auth switch "Work-Claude" --target both
+agy-agent account switch "OpenAI-Main"
 
-agy-agent account add --name "OpenAI-Backup" --provider "openai" --key "sk-proj-..." --model "gpt-4o"
+# 3. Quota-aware automatic pool rotation (rotates when quota exceeds threshold or on HTTP 429)
+agy-agent auth rotate --threshold 90.0
 
-# Switch active account immediately
-agy-agent account switch OpenAI-Backup
+# 4. View account pool ranked by health score, quota headroom, and reliability
+agy-agent auth rank
 
-# View quota usage, remaining limits, request counts, and error telemetry
+# 5. Capture active Google Antigravity CLI OAuth token into a named profile
+agy-agent auth capture --name "Google-Personal" --email "dev@gmail.com" --plan "Pro"
+
+# 6. Synchronize account store with active live CLI credentials
+agy-agent auth sync
+
+# 7. Export / Import portable snapshot bundles with SHA-256 integrity signatures
+agy-agent auth export --output .agy/profiles_bundle.json
+agy-agent auth import .agy/profiles_bundle.json --overwrite
+
+# 8. List and restore historical credential backups
+agy-agent auth backups
+agy-agent auth restore .agy/auth_backups/cli_Work-Claude_20261112_143000_a1b2c3d4.bak --target both
+
+# 9. Register standard OpenAI/Claude/Gemini/DeepSeek/Ollama API accounts
+agy-agent account add --name "Claude-Work" --provider "claude" --key "sk-ant-api03-..." --model "claude-3-5-sonnet" --quota 250000 --tier "Enterprise"
+agy-agent account add --name "OpenAI-Backup" --provider "openai" --key "sk-proj-..." --model "gpt-4o" --tier "Pro"
+
+# 10. View quota usage, remaining limits, request counts, and error telemetry
 agy-agent account quota
-
-# Remove an account
-agy-agent account remove Claude-Work
 ```
+
+> [!NOTE]
+> **Credential Safety & Pre-Switch Backups:** Before modifying live credentials in `~/.gemini/antigravity-cli/antigravity-oauth-token` or Desktop profiles, `agy-agent` automatically writes a timestamped, SHA-256-verified backup to `.agy/auth_backups/`. All live credential updates use atomic staged writes (`.agy_token_stage_<uuid>` + `fsync` + atomic rename) to guarantee zero file corruption.
 
 #### 10. Universal Local API Gateway (`serve`)
 Start a pure Rust async HTTP API gateway that translates incoming requests from any AI tool or IDE extension (Cursor, Cline, Continue, Aider, Open-WebUI, or curl) into AGY agent executions or upstream providers (inspired by `agy2api`):

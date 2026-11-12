@@ -21,6 +21,20 @@ pub struct AccountProfile {
     pub cooldown_until: Option<DateTime<Utc>>,
     pub last_used_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub plan_tier: Option<String>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub token_type: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub refresh_failure_count: u64,
+    #[serde(default)]
+    pub last_switched_at: Option<DateTime<Utc>>,
 }
 
 impl AccountProfile {
@@ -47,7 +61,37 @@ impl AccountProfile {
             cooldown_until: None,
             last_used_at: None,
             created_at: Utc::now(),
+            email: None,
+            plan_tier: None,
+            refresh_token: None,
+            token_type: Some("Bearer".to_string()),
+            expires_at: None,
+            refresh_failure_count: 0,
+            last_switched_at: None,
         }
+    }
+
+    pub fn with_email(mut self, email: impl Into<String>) -> Self {
+        self.email = Some(email.into());
+        self
+    }
+
+    pub fn with_plan_tier(mut self, tier: impl Into<String>) -> Self {
+        self.plan_tier = Some(tier.into());
+        self
+    }
+
+    pub fn with_oauth_token(
+        mut self,
+        token: impl Into<String>,
+        refresh: Option<String>,
+        expires_at: Option<DateTime<Utc>>,
+    ) -> Self {
+        self.api_key = token.into();
+        self.refresh_token = refresh;
+        self.token_type = Some("OAuth".to_string());
+        self.expires_at = expires_at;
+        self
     }
 
     pub fn safe_masked_key(&self) -> String {
@@ -76,9 +120,113 @@ impl AccountProfile {
         }
     }
 
-    pub fn is_usable(&self) -> bool {
-        !self.is_cooling() && !self.is_quota_exceeded()
+    pub fn is_low_quota(&self, threshold_percent: f64) -> bool {
+        if let Some(limit) = self.quota_limit {
+            if limit > 0 {
+                let ratio = (self.quota_used as f64 / limit as f64) * 100.0;
+                return ratio >= threshold_percent;
+            }
+        }
+        false
     }
+
+    pub fn is_expired(&self) -> bool {
+        if let Some(expires_at) = self.expires_at {
+            Utc::now() >= expires_at
+        } else {
+            false
+        }
+    }
+
+    pub fn expires_in_secs(&self) -> Option<i64> {
+        self.expires_at.map(|exp| (exp - Utc::now()).num_seconds())
+    }
+
+    pub fn is_usable(&self) -> bool {
+        !self.is_cooling() && !self.is_quota_exceeded() && !self.is_expired()
+    }
+
+    /// Computes dynamic Health Score (0..=100) inspired by zcop/agy-cli-manager
+    pub fn health_score(&self) -> u32 {
+        if self.is_cooling() || self.is_quota_exceeded() || self.is_expired() {
+            return 0;
+        }
+
+        let mut score: i32 = 100;
+
+        // Quota penalty: up to 50 points based on quota used percentage
+        if let Some(limit) = self.quota_limit {
+            if limit > 0 {
+                let usage_ratio = (self.quota_used as f64) / (limit as f64);
+                let penalty = (usage_ratio * 50.0).min(50.0) as i32;
+                score -= penalty;
+            }
+        }
+
+        // Error penalty: 5 points per error, capped at 30
+        let error_penalty = ((self.error_count as i32) * 5).min(30);
+        score -= error_penalty;
+
+        // Refresh failure penalty: 10 points per failure, capped at 30
+        let refresh_penalty = ((self.refresh_failure_count as i32) * 10).min(30);
+        score -= refresh_penalty;
+
+        // Expiry warning penalty: if expiring in less than 30 minutes, deduct 20 points
+        if let Some(secs) = self.expires_in_secs() {
+            if secs > 0 && secs < 1800 {
+                score -= 20;
+            }
+        }
+
+        score.max(0) as u32
+    }
+
+    pub fn health_status(&self) -> &'static str {
+        if self.is_cooling() {
+            "Cooling (429)"
+        } else if self.is_expired() {
+            "Expired"
+        } else if self.is_quota_exceeded() {
+            "Quota Exceeded"
+        } else if self.is_low_quota(90.0) {
+            "Low Quota"
+        } else {
+            let score = self.health_score();
+            if score >= 80 {
+                "Healthy"
+            } else if score >= 50 {
+                "Fair"
+            } else {
+                "Degraded"
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RankedAccount {
+    pub rank: usize,
+    pub id: String,
+    pub name: String,
+    pub email: Option<String>,
+    pub provider: String,
+    pub plan_tier: String,
+    pub health_score: u32,
+    pub status: String,
+    pub is_active: bool,
+    pub quota_limit: Option<u64>,
+    pub quota_used: u64,
+    pub quota_percent: Option<f64>,
+    pub error_count: u64,
+    pub masked_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RotationResult {
+    pub from: String,
+    pub to: String,
+    pub reason: String,
+    pub timestamp: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -88,7 +236,9 @@ pub struct AccountStore {
 
 impl AccountStore {
     pub fn new() -> Self {
-        AccountStore { accounts: Vec::new() }
+        AccountStore {
+            accounts: Vec::new(),
+        }
     }
 
     pub fn default_path(workspace: &Path) -> PathBuf {
@@ -158,6 +308,7 @@ impl AccountStore {
         for a in &mut self.accounts {
             if a.id == id_or_name || a.name.eq_ignore_ascii_case(id_or_name) {
                 a.is_active = true;
+                a.last_switched_at = Some(Utc::now());
             } else {
                 a.is_active = false;
             }
@@ -175,6 +326,7 @@ impl AccountStore {
         // If we removed the active account, make another one active if available
         if removed.is_active && !self.accounts.is_empty() {
             self.accounts[0].is_active = true;
+            self.accounts[0].last_switched_at = Some(Utc::now());
         }
         Ok(removed)
     }
@@ -209,8 +361,119 @@ impl AccountStore {
                 return Some(active);
             }
         }
-        // Fallback: first non-cooling and non-exhausted account
-        self.accounts.iter().find(|a| a.is_usable())
+        // Fallback: highest health score usable standby
+        self.get_best_standby()
+    }
+
+    /// Evaluates and ranks all accounts based on health score descending
+    pub fn rank_accounts(&self) -> Vec<RankedAccount> {
+        let mut sorted = self.accounts.clone();
+        // Sort primarily by health score descending, active account first if score is tied
+        sorted.sort_by(|a, b| {
+            b.health_score()
+                .cmp(&a.health_score())
+                .then_with(|| b.is_active.cmp(&a.is_active))
+        });
+
+        sorted
+            .into_iter()
+            .enumerate()
+            .map(|(i, acc)| {
+                let health_score = acc.health_score();
+                let status = acc.health_status().to_string();
+                let masked_key = acc.safe_masked_key();
+                let q_pct = acc.quota_limit.map(|lim| {
+                    if lim > 0 {
+                        (acc.quota_used as f64 / lim as f64) * 100.0
+                    } else {
+                        100.0
+                    }
+                });
+                RankedAccount {
+                    rank: i + 1,
+                    id: acc.id,
+                    name: acc.name,
+                    email: acc.email,
+                    provider: acc.provider,
+                    plan_tier: acc.plan_tier.unwrap_or_else(|| "Standard".to_string()),
+                    health_score,
+                    status,
+                    is_active: acc.is_active,
+                    quota_limit: acc.quota_limit,
+                    quota_used: acc.quota_used,
+                    quota_percent: q_pct,
+                    error_count: acc.error_count,
+                    masked_key,
+                }
+            })
+            .collect()
+    }
+
+    /// Finds the highest-scoring healthy standby account in the pool
+    pub fn get_best_standby(&self) -> Option<&AccountProfile> {
+        self.accounts
+            .iter()
+            .filter(|a| !a.is_active && a.is_usable() && a.health_score() > 0)
+            .max_by_key(|a| a.health_score())
+    }
+
+    /// Checks if the active account needs rotation (rate limit, quota, errors, or expiry)
+    pub fn should_rotate(&self, threshold_percent: f64) -> Option<String> {
+        if let Some(active) = self.get_active_account() {
+            if active.is_cooling() {
+                return Some("Active account is cooling down from HTTP 429 rate limit".to_string());
+            }
+            if active.is_quota_exceeded() {
+                return Some("Active account quota ceiling has been reached".to_string());
+            }
+            if active.is_expired() {
+                return Some("Active account credentials have expired".to_string());
+            }
+            if active.is_low_quota(threshold_percent) {
+                return Some(format!(
+                    "Active account reached low-quota threshold (>= {:.1}%)",
+                    threshold_percent
+                ));
+            }
+            if active.error_count >= 5 {
+                return Some("Active account exceeded error tolerance threshold (>= 5 consecutive errors)".to_string());
+            }
+        } else {
+            return Some("No active account is currently designated in the pool".to_string());
+        }
+        None
+    }
+
+    /// Performs automatic quota-aware failover and rotation to the top-ranked standby account
+    pub fn auto_rotate(&mut self, threshold_percent: f64) -> Result<Option<RotationResult>, CommonError> {
+        let reason = match self.should_rotate(threshold_percent) {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+
+        let current_active_name = self
+            .get_active_account()
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| "none".to_string());
+
+        let best_standby_name = match self.get_best_standby() {
+            Some(s) => s.name.clone(),
+            None => {
+                return Err(CommonError::Generic(format!(
+                    "Rotation needed ({}) but no healthy standby account available in pool",
+                    reason
+                )));
+            }
+        };
+
+        self.switch_active(&best_standby_name)?;
+
+        Ok(Some(RotationResult {
+            from: current_active_name,
+            to: best_standby_name,
+            reason,
+            timestamp: Utc::now(),
+        }))
     }
 }
 
@@ -269,5 +532,42 @@ mod tests {
         assert_eq!(store.get_account("Limited").unwrap().quota_used, 550);
         assert!(store.get_account("Limited").unwrap().is_quota_exceeded());
         assert!(!store.get_account("Limited").unwrap().is_usable());
+    }
+
+    #[test]
+    fn test_health_score_and_pool_ranking() {
+        let mut store = AccountStore::new();
+        let mut acc1 = AccountProfile::new("HealthyStandby", "claude", "sk-ant-test-1", None, None, Some(10000))
+            .with_plan_tier("Pro");
+        acc1.quota_used = 1000; // 10% used -> score ~95
+
+        let mut acc2 = AccountProfile::new("ActiveDegraded", "openai", "sk-test-2", None, None, Some(1000))
+            .with_plan_tier("Free");
+        acc2.is_active = true;
+        acc2.quota_used = 920; // 92% used -> low quota
+        acc2.error_count = 2;
+
+        let mut acc3 = AccountProfile::new("CoolingAccount", "gemini", "sk-test-3", None, None, None);
+        acc3.cooldown_until = Some(Utc::now() + chrono::Duration::seconds(60));
+
+        store.accounts.push(acc1);
+        store.accounts.push(acc2);
+        store.accounts.push(acc3);
+
+        let ranking = store.rank_accounts();
+        assert_eq!(ranking.len(), 3);
+        assert_eq!(ranking[0].name, "HealthyStandby");
+        assert!(ranking[0].health_score >= 90);
+        assert_eq!(ranking[2].name, "CoolingAccount");
+        assert_eq!(ranking[2].health_score, 0);
+
+        // Test should_rotate: ActiveDegraded is at 92%
+        assert!(store.should_rotate(90.0).is_some());
+
+        // Test auto_rotate
+        let rot = store.auto_rotate(90.0).unwrap().unwrap();
+        assert_eq!(rot.from, "ActiveDegraded");
+        assert_eq!(rot.to, "HealthyStandby");
+        assert_eq!(store.get_active_account().unwrap().name, "HealthyStandby");
     }
 }

@@ -196,7 +196,7 @@ async fn handle_http_stream(
         (200, json!({ "status": "ok", "service": "agy-gateway", "version": "0.1.0" }))
     } else if path == "/api/accounts" && method == "GET" {
         let store = accounts.read().await;
-        (200, json!(store.list_accounts()))
+        (200, json!(store.rank_accounts()))
     } else if path == "/api/accounts" && method == "POST" {
         let val: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
         let name = val["name"].as_str().unwrap_or("Account").to_string();
@@ -205,7 +205,15 @@ async fn handle_http_stream(
         let model = val["model"].as_str().map(|s| s.to_string());
         let url = val["url"].as_str().map(|s| s.to_string());
         let quota = val["quota"].as_u64();
-        let profile = crate::account::AccountProfile::new(name, provider, key, url, model, quota);
+        let email = val["email"].as_str().map(|s| s.to_string());
+        let tier = val["plan_tier"].as_str().map(|s| s.to_string());
+        let mut profile = crate::account::AccountProfile::new(name, provider, key, url, model, quota);
+        if let Some(em) = email {
+            profile.email = Some(em);
+        }
+        if let Some(t) = tier {
+            profile.plan_tier = Some(t);
+        }
         let mut store = accounts.write().await;
         match store.add_account(profile) {
             Ok(_) => {
@@ -215,18 +223,43 @@ async fn handle_http_stream(
             }
             Err(e) => (400, json!({ "error": e.to_string() })),
         }
-    } else if path == "/api/accounts/switch" && method == "POST" {
+    } else if (path == "/api/accounts/switch" || path == "/api/auth/switch") && method == "POST" {
         let val: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
-        let id_or_name = val["id_or_name"].as_str().unwrap_or("");
+        let id_or_name = val["id_or_name"].as_str().or_else(|| val["name"].as_str()).unwrap_or("");
         let mut store = accounts.write().await;
-        match store.switch_active(id_or_name) {
-            Ok(_) => {
-                let acc_path = crate::account::AccountStore::default_path(&config.workspace);
-                let _ = store.save_to_path(&acc_path);
-                (200, json!({ "status": "ok", "message": format!("Switched to {}", id_or_name) }))
+        match crate::auth::AuthCredentialManager::apply_switch(&mut store, id_or_name, crate::auth::TargetMode::Both, &config.workspace) {
+            Ok(report) => {
+                let _ = audit.log("gateway", "gateway", "auth_switch", json!({ "account": id_or_name, "targets": report.updated_paths.len(), "backups": report.backups_created.len() }));
+                (200, json!({ "status": "ok", "message": format!("Switched to {}", id_or_name), "report": report }))
             }
             Err(e) => (400, json!({ "error": e.to_string() })),
         }
+    } else if path == "/api/auth/rotate" && method == "POST" {
+        let val: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
+        let threshold = val["threshold"].as_f64().unwrap_or(90.0);
+        let mut store = accounts.write().await;
+        match store.auto_rotate(threshold) {
+            Ok(Some(rot)) => {
+                let target_name = rot.to.clone();
+                let _ = crate::auth::AuthCredentialManager::apply_switch(&mut store, &target_name, crate::auth::TargetMode::Both, &config.workspace);
+                let _ = audit.log("gateway", "gateway", "auth_auto_rotate", json!({ "from": rot.from, "to": rot.to, "reason": rot.reason }));
+                (200, json!({ "status": "ok", "rotated": true, "rotation": rot }))
+            }
+            Ok(None) => (200, json!({ "status": "ok", "rotated": false, "message": "Active account is healthy, no rotation needed" })),
+            Err(e) => (400, json!({ "error": e.to_string() })),
+        }
+    } else if path == "/api/auth/sync" && method == "POST" {
+        let mut store = accounts.write().await;
+        match crate::auth::AuthCredentialManager::sync_with_cli(&mut store, &config.workspace) {
+            Ok(report) => {
+                let _ = audit.log("gateway", "gateway", "auth_sync", json!({ "action": report.action_taken }));
+                (200, json!({ "status": "ok", "report": report }))
+            }
+            Err(e) => (400, json!({ "error": e.to_string() })),
+        }
+    } else if path == "/api/auth/backups" && method == "GET" {
+        let backups = crate::auth::AuthCredentialManager::list_backups(&config.workspace);
+        (200, json!(backups))
     } else if path == "/api/accounts/delete" && method == "POST" {
         let val: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
         let id_or_name = val["id_or_name"].as_str().unwrap_or("");

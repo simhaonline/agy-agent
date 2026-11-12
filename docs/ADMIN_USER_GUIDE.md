@@ -231,19 +231,30 @@ flowchart LR
    agy-agent audit --limit 20
    ```
 
-9. **Multi-Account Switching & Quotas (`account`):**
-   Register and toggle accounts with automated 429 cooldown failover:
+9. **Multi-Account Switching, Auth & Quota Engine (`account` & `auth`):**
+   Register and toggle accounts with automated 429 cooldown failover, dynamic health ranking, pre-switch backups, and CLI/Desktop synchronization (inspired by `agy-switch`, `fikrilal/agy-auth`, and `zcop/agy-cli-manager`):
    ```bash
-   # Add Claude and OpenAI profiles
-   agy-agent account add --name "Claude-Work" --provider "claude" --key "sk-ant-..." --model "claude-3-5-sonnet" --quota 250000
-   agy-agent account add --name "OpenAI-Backup" --provider "openai" --key "sk-proj-..." --model "gpt-4o"
+   # Add profiles with tier and email metadata
+   agy-agent account add --name "Claude-Work" --provider "claude" --key "sk-ant-..." --model "claude-3-5-sonnet" --quota 250000 --tier "Enterprise" --email "team@corp.com"
+   agy-agent account add --name "OpenAI-Backup" --provider "openai" --key "sk-proj-..." --model "gpt-4o" --tier "Pro"
 
-   # List accounts and check quotas
-   agy-agent account list
-   agy-agent account quota
+   # List accounts with health ranking scores
+   agy-agent auth list
+   agy-agent auth rank
 
-   # Switch active account
-   agy-agent account switch Claude-Work
+   # Switch active account with automatic pre-switch backup
+   agy-agent auth switch Claude-Work --target both
+
+   # Quota-aware automatic pool rotation
+   agy-agent auth rotate --threshold 90.0
+
+   # Capture live CLI token or synchronize with CLI
+   agy-agent auth capture --name "Google-Work"
+   agy-agent auth sync
+
+   # Snapshot export and backup restoration
+   agy-agent auth export --output .agy/profiles_bundle.json
+   agy-agent auth backups
    ```
 
 10. **Universal Local API Gateway Server (`serve`):**

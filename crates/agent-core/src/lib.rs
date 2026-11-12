@@ -1,5 +1,6 @@
 pub mod account;
 pub mod audit;
+pub mod auth;
 pub mod background;
 pub mod gateway;
 pub mod manager;
@@ -9,6 +10,7 @@ pub mod subagent;
 
 pub use account::*;
 pub use audit::*;
+pub use auth::*;
 pub use background::*;
 pub use gateway::*;
 pub use manager::*;

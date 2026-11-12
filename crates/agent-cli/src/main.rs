@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use agent_core::account::{AccountProfile, AccountStore};
+use agent_core::auth::{AuthCredentialManager, TargetMode};
 use agent_core::audit::AuditLogger;
 use agent_core::gateway::{GatewayConfig, GatewayServer};
 use agent_core::manager::ClientManager;
@@ -57,6 +58,12 @@ enum Commands {
     Account {
         #[command(subcommand)]
         sub: AccountCommands,
+    },
+
+    /// Multi-account authentication, CLI token synchronization & quota-aware rotation (agy-auth & agy-cli-manager)
+    Auth {
+        #[command(subcommand)]
+        sub: AuthCommands,
     },
 
     /// Start universal local API gateway for OpenAI, Claude, and Gemini formats (agy2api)
@@ -173,6 +180,12 @@ enum AccountCommands {
         /// Optional token quota limit
         #[arg(short, long)]
         quota: Option<u64>,
+        /// Optional email identity
+        #[arg(long)]
+        email: Option<String>,
+        /// Optional plan tier (e.g. Pro, Ultra, Enterprise, Free)
+        #[arg(long)]
+        tier: Option<String>,
         #[arg(short, long, default_value = ".")]
         workspace: PathBuf,
     },
@@ -194,6 +207,101 @@ enum AccountCommands {
     Quota {
         #[arg(short, long, default_value = ".")]
         workspace: PathBuf,
+    },
+    /// Display account pool ranked by health score and reliability (zcop/agy-cli-manager)
+    Rank {
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Automatic failover and rotation to top-ranked standby account
+    Rotate {
+        /// Low-quota rotation threshold percentage (default: 90.0)
+        #[arg(short, long, default_value_t = 90.0)]
+        threshold: f64,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuthCommands {
+    /// List all managed accounts with health scores, plans, and quota usage (agy-auth & agy-cli-manager)
+    List {
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Switch active credentials across CLI, Desktop, or both with automatic backup
+    Switch {
+        /// Account name or ID
+        id_or_name: String,
+        /// Target environment: cli, desktop, or both
+        #[arg(short, long, default_value = "both")]
+        target: String,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Quota-aware automatic failover and rotation to top-ranked standby account
+    Rotate {
+        /// Low-quota rotation trigger threshold in percentage (default: 90.0)
+        #[arg(short, long, default_value_t = 90.0)]
+        threshold: f64,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Display account pool ranked by health score, quota, and reliability
+    Rank {
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Capture current live Antigravity CLI token into a managed profile
+    Capture {
+        /// Name alias for captured account profile
+        #[arg(short, long)]
+        name: String,
+        /// Optional email identity
+        #[arg(short, long)]
+        email: Option<String>,
+        /// Optional plan tier (e.g. Pro, Ultra, Enterprise)
+        #[arg(short, long)]
+        plan: Option<String>,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Synchronize account store with active live CLI token
+    Sync {
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Export managed account profiles into a portable snapshot bundle
+    Export {
+        /// Output file path (default: .agy/profiles_bundle.json)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Import account profiles from a snapshot bundle
+    Import {
+        /// Input snapshot bundle file path
+        file: PathBuf,
+        /// Overwrite existing accounts with same name
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// List historical credential backups
+    Backups {
+        #[arg(short, long, default_value = ".")]
+        workspace: PathBuf,
+    },
+    /// Restore live credentials from a historical backup file
+    Restore {
+        /// Path to .bak backup file
+        file: PathBuf,
+        /// Target environment: cli, desktop, or both
+        #[arg(short, long, default_value = "both")]
+        target: String,
     },
 }
 
@@ -333,10 +441,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("=========================================================================================");
                 }
             }
-            AccountCommands::Add { name, provider, key, url, model, quota, workspace } => {
+            AccountCommands::Add { name, provider, key, url, model, quota, email, tier, workspace } => {
                 let acc_path = AccountStore::default_path(&workspace);
                 let mut store = AccountStore::load_from_path(&acc_path)?;
-                let profile = AccountProfile::new(name.clone(), provider, key, url, model, quota);
+                let mut profile = AccountProfile::new(name.clone(), provider, key, url, model, quota);
+                if let Some(em) = email {
+                    profile.email = Some(em);
+                }
+                if let Some(t) = tier {
+                    profile.plan_tier = Some(t);
+                }
                 store.add_account(profile)?;
                 store.save_to_path(&acc_path)?;
                 println!("[OK] Account '{}' registered successfully.", name);
@@ -373,6 +487,193 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                     println!("=========================================================================================");
+                }
+            }
+            AccountCommands::Rank { workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let store = AccountStore::load_from_path(&acc_path)?;
+                let ranking = store.rank_accounts();
+                println!("==========================================================================================================");
+                println!("ACCOUNT HEALTH RANKING POOL");
+                println!("==========================================================================================================");
+                for a in ranking {
+                    let quota_str = if let Some(pct) = a.quota_percent {
+                        format!("{:.1}% ({}/{})", pct, a.quota_used, a.quota_limit.unwrap_or(0))
+                    } else {
+                        format!("{} used (Unlimited)", a.quota_used)
+                    };
+                    println!("#{:02} [{}] Score: {:<3}/100 | Tier: {:<10} | Quota: {} | Status: {}",
+                        a.rank, a.name, a.health_score, a.plan_tier, quota_str, a.status);
+                }
+                println!("==========================================================================================================");
+            }
+            AccountCommands::Rotate { threshold, workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let mut store = AccountStore::load_from_path(&acc_path)?;
+                match store.auto_rotate(threshold)? {
+                    Some(rot) => {
+                        let _ = AuthCredentialManager::apply_switch(&mut store, &rot.to, TargetMode::Both, &workspace);
+                        println!("============================================================");
+                        println!("QUOTA-AWARE AUTO-ROTATION: SUCCESSFUL");
+                        println!("============================================================");
+                        println!("Rotated From:   {}", rot.from);
+                        println!("Rotated To:     {}", rot.to);
+                        println!("Trigger Reason: {}", rot.reason);
+                    }
+                    None => {
+                        let active = store.get_active_account().map(|a| a.name.clone()).unwrap_or_else(|| "none".to_string());
+                        println!("[OK] Active account '{}' is healthy. No rotation required.", active);
+                    }
+                }
+            }
+        },
+
+        Commands::Auth { sub } => match sub {
+            AuthCommands::List { workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let store = AccountStore::load_from_path(&acc_path)?;
+                let ranking = store.rank_accounts();
+                if ranking.is_empty() {
+                    println!("No accounts configured. Use 'agy-agent auth capture' or 'agy-agent account add'.");
+                } else {
+                    println!("==========================================================================================================");
+                    println!("MANAGED ACCOUNTS & HEALTH RANKING POOL");
+                    println!("==========================================================================================================");
+                    println!("{:<4} {:<16} {:<12} {:<10} {:<10} {:<14} {:<8} {:<16}", "RNK", "NAME", "PROVIDER", "TIER", "HEALTH", "STATUS", "ACTIVE", "KEY");
+                    println!("----------------------------------------------------------------------------------------------------------");
+                    for a in ranking {
+                        let active_str = if a.is_active { "[ACTIVE]" } else { " " };
+                        let health_bar = format!("{}/100", a.health_score);
+                        println!(
+                            "{:<4} {:<16} {:<12} {:<10} {:<10} {:<14} {:<8} {:<16}",
+                            a.rank, a.name, a.provider, a.plan_tier, health_bar, a.status, active_str, a.masked_key
+                        );
+                    }
+                    println!("==========================================================================================================");
+                }
+            }
+            AuthCommands::Switch { id_or_name, target, workspace } => {
+                let target_mode = target.parse::<TargetMode>()?;
+                let acc_path = AccountStore::default_path(&workspace);
+                let mut store = AccountStore::load_from_path(&acc_path)?;
+                let report = AuthCredentialManager::apply_switch(&mut store, &id_or_name, target_mode, &workspace)?;
+                println!("============================================================");
+                println!("CREDENTIAL SWITCH: SUCCESSFUL");
+                println!("============================================================");
+                println!("Account:        {} ({})", report.account_name, report.provider);
+                println!("Target Mode:    {:?}", report.target_mode);
+                println!("Updated Paths:  {}", report.updated_paths.len());
+                for p in &report.updated_paths {
+                    println!("  - Target:     {}", p.display());
+                }
+                println!("Backups Taken:  {}", report.backups_created.len());
+                for b in &report.backups_created {
+                    println!("  - Backup:     {} (SHA-256: {})", b.filename, &b.sha256[..8]);
+                }
+            }
+            AuthCommands::Rotate { threshold, workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let mut store = AccountStore::load_from_path(&acc_path)?;
+                match store.auto_rotate(threshold)? {
+                    Some(rot) => {
+                        let report = AuthCredentialManager::apply_switch(&mut store, &rot.to, TargetMode::Both, &workspace)?;
+                        println!("============================================================");
+                        println!("QUOTA-AWARE AUTO-ROTATION: SUCCESSFUL");
+                        println!("============================================================");
+                        println!("Rotated From:   {}", rot.from);
+                        println!("Rotated To:     {} ({})", rot.to, report.provider);
+                        println!("Trigger Reason: {}", rot.reason);
+                        println!("Live Credential Updated: {:?}", report.target_mode);
+                    }
+                    None => {
+                        let active = store.get_active_account().map(|a| a.name.clone()).unwrap_or_else(|| "none".to_string());
+                        println!("[OK] Active account '{}' is healthy. No rotation required.", active);
+                    }
+                }
+            }
+            AuthCommands::Rank { workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let store = AccountStore::load_from_path(&acc_path)?;
+                let ranking = store.rank_accounts();
+                println!("==========================================================================================================");
+                println!("ACCOUNT HEALTH RANKING POOL");
+                println!("==========================================================================================================");
+                for a in ranking {
+                    let quota_str = if let Some(pct) = a.quota_percent {
+                        format!("{:.1}% ({}/{})", pct, a.quota_used, a.quota_limit.unwrap_or(0))
+                    } else {
+                        format!("{} used (Unlimited)", a.quota_used)
+                    };
+                    println!("#{:02} [{}] Score: {:<3}/100 | Tier: {:<10} | Quota: {} | Status: {}",
+                        a.rank, a.name, a.health_score, a.plan_tier, quota_str, a.status);
+                }
+                println!("==========================================================================================================");
+            }
+            AuthCommands::Capture { name, email, plan, workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let mut store = AccountStore::load_from_path(&acc_path).unwrap_or_default();
+                let mut profile = AuthCredentialManager::capture_live_cli_token(&name, Some("antigravity"), plan.as_deref())?;
+                if let Some(em) = email {
+                    profile.email = Some(em);
+                }
+                let captured_name = profile.name.clone();
+                store.add_account(profile)?;
+                store.save_to_path(&acc_path)?;
+                println!("[OK] Captured live CLI token into profile '{}'.", captured_name);
+            }
+            AuthCommands::Sync { workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let mut store = AccountStore::load_from_path(&acc_path).unwrap_or_default();
+                let report = AuthCredentialManager::sync_with_cli(&mut store, &workspace)?;
+                println!("============================================================");
+                println!("CLI CREDENTIAL SYNCHRONIZATION");
+                println!("============================================================");
+                println!("Live Token:   {}", if report.live_token_found { "[FOUND]" } else { "[NOT FOUND]" });
+                if let Some(p) = report.live_token_path {
+                    println!("Path:         {}", p.display());
+                }
+                println!("Action:       {}", report.action_taken);
+                println!("Active Now:   {}", report.active_account_name);
+            }
+            AuthCommands::Export { output, workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let store = AccountStore::load_from_path(&acc_path)?;
+                let out_file = output.unwrap_or_else(|| workspace.join(".agy").join("profiles_bundle.json"));
+                AuthCredentialManager::export_bundle(&store, &out_file)?;
+                println!("[OK] Exported {} accounts to '{}'", store.list_accounts().len(), out_file.display());
+            }
+            AuthCommands::Import { file, overwrite, workspace } => {
+                let acc_path = AccountStore::default_path(&workspace);
+                let mut store = AccountStore::load_from_path(&acc_path).unwrap_or_default();
+                let count = AuthCredentialManager::import_bundle(&mut store, &file, overwrite)?;
+                store.save_to_path(&acc_path)?;
+                println!("[OK] Imported {} accounts from '{}'. Total accounts: {}", count, file.display(), store.list_accounts().len());
+            }
+            AuthCommands::Backups { workspace } => {
+                let backups = AuthCredentialManager::list_backups(&workspace);
+                if backups.is_empty() {
+                    println!("No credential backups found in .agy/auth_backups/.");
+                } else {
+                    println!("=========================================================================================");
+                    println!("{:<32} {:<10} {:<10} {:<24}", "FILENAME", "SIZE", "SHA-256", "TIMESTAMP");
+                    println!("-----------------------------------------------------------------------------------------");
+                    for b in backups {
+                        let sha_short = if b.sha256.len() >= 8 { &b.sha256[..8] } else { &b.sha256 };
+                        println!("{:<32} {:<10} {:<10} {:<24}", b.filename, b.file_size, sha_short, b.created_at.to_rfc3339());
+                    }
+                    println!("=========================================================================================");
+                }
+            }
+            AuthCommands::Restore { file, target } => {
+                let target_mode = target.parse::<TargetMode>()?;
+                let report = AuthCredentialManager::restore_backup(&file, target_mode)?;
+                println!("============================================================");
+                println!("CREDENTIAL RESTORATION: SUCCESSFUL");
+                println!("============================================================");
+                println!("Restored From:  {}", report.restored_from.display());
+                println!("Target Mode:    {:?}", report.target_mode);
+                for p in &report.updated_paths {
+                    println!("  - Target:     {}", p.display());
                 }
             }
         },

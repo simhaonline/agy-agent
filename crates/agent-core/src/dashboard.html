@@ -287,14 +287,18 @@
       </div>
     </div>
 
-    <!-- Accounts Section (agy-switch) -->
+    <!-- Accounts Section (agy-switch, agy-auth, agy-cli-manager) -->
     <div class="section-box" id="accounts-section">
       <div class="section-header">
         <div class="section-title">
-          <span>⚡ Multi-Account Switching & Quota Engine</span>
-          <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(agy-switch Reference)</span>
+          <span>⚡ Multi-Account Switching, Auth & Quota Engine</span>
+          <span style="font-size: 12px; font-weight: normal; color: var(--text-muted);">(agy-switch, agy-auth & agy-cli-manager Reference)</span>
         </div>
-        <button class="btn" onclick="openAddModal()">+ Add New Account</button>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary" onclick="autoRotatePool()">🔄 Auto-Rotate</button>
+          <button class="btn btn-secondary" onclick="syncCliCredentials()">🔁 Sync CLI Token</button>
+          <button class="btn" onclick="openAddModal()">+ Add New Account</button>
+        </div>
       </div>
       <div class="account-cards" id="account-cards-container">
         <!-- Rendered via JS -->
@@ -412,7 +416,21 @@
       </div>
       <div class="form-group">
         <label>Account Name / Nickname</label>
-        <input type="text" id="add-name" class="form-control" placeholder="e.g. Anthropic-Work, OpenAI-Main">
+        <input type="text" id="add-name" class="form-control" placeholder="e.g. Anthropic-Work, OpenAI-Main, Google-Personal">
+      </div>
+      <div class="form-group">
+        <label>Email / Identity (Optional)</label>
+        <input type="email" id="add-email" class="form-control" placeholder="e.g. engineer@company.com">
+      </div>
+      <div class="form-group">
+        <label>Plan Tier</label>
+        <select id="add-tier" class="form-control">
+          <option value="Pro" selected>Pro Tier</option>
+          <option value="Ultra">Ultra Tier</option>
+          <option value="Enterprise">Enterprise</option>
+          <option value="Free">Free Tier</option>
+          <option value="Standard">Standard</option>
+        </select>
       </div>
       <div class="form-group">
         <label>Provider Type</label>
@@ -494,18 +512,36 @@
           statusBadge = '<span class="badge badge-ready">READY</span>';
         }
 
+        const healthScore = a.health_score !== undefined ? a.health_score : 100;
+        let healthColor = '#10b981';
+        if (healthScore < 50) healthColor = '#ef4444';
+        else if (healthScore < 80) healthColor = '#f59e0b';
+
+        const tierBadge = `<span style="font-size: 11px; padding: 2px 7px; border-radius: 4px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.25); color: #38bdf8; font-weight: 600; text-transform: uppercase;">${escapeHtml(a.plan_tier || 'Standard')}</span>`;
+        const healthBadge = `<span style="font-size: 11px; padding: 2px 7px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: ${healthColor}; font-weight: 600;">Health: ${healthScore}/100</span>`;
+
         const quotaLimit = a.quota_limit || 0;
         const used = a.quota_used || 0;
         const pct = quotaLimit > 0 ? Math.min(100, Math.round((used / quotaLimit) * 100)) : 0;
         const quotaText = quotaLimit > 0 ? `${used.toLocaleString()} / ${quotaLimit.toLocaleString()} tokens (${pct}%)` : `${used.toLocaleString()} tokens used (Unlimited)`;
+        const keyDisplay = a.masked_key || (a.api_key ? (a.api_key.substring(0, 4) + '...' + a.api_key.substring(Math.max(0, a.api_key.length - 4))) : '********');
 
         card.innerHTML = `
           <div class="acc-header">
             <div>
-              <div class="acc-name">${escapeHtml(a.name)}</div>
-              <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase;">${escapeHtml(a.provider)} • ${escapeHtml(a.model || 'default')}</div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="acc-name">${escapeHtml(a.name)}</span>
+                ${tierBadge}
+              </div>
+              <div style="font-size: 12px; color: var(--text-muted); text-transform: uppercase; margin-top: 2px;">
+                ${escapeHtml(a.provider)} • ${escapeHtml(a.model || 'default')}
+                ${a.email ? ` • <span style="color: #cbd5e1; text-transform: none;">${escapeHtml(a.email)}</span>` : ''}
+              </div>
             </div>
-            ${statusBadge}
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+              ${statusBadge}
+              ${healthBadge}
+            </div>
           </div>
           <div>
             <div style="font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between;">
@@ -515,7 +551,7 @@
             ${quotaLimit > 0 ? `<div class="progress-bar-bg"><div class="progress-bar-fill" style="width: ${pct}%"></div></div>` : ''}
           </div>
           <div style="font-size: 12px; color: var(--text-muted);">
-            Key: <span style="font-family: monospace;">${escapeHtml(a.api_key.substring(0, 4))}...${escapeHtml(a.api_key.substring(Math.max(0, a.api_key.length - 4)))}</span> • Requests: ${a.request_count || 0}
+            Key: <span style="font-family: monospace;">${escapeHtml(keyDisplay)}</span> • Requests: ${a.request_count || 0} • Errors: ${a.error_count || 0}
           </div>
           <div class="acc-actions">
             ${!a.is_active ? `<button class="btn btn-secondary" style="flex: 1; padding: 6px;" onclick="switchAccount('${escapeHtml(a.name)}')">Set Active</button>` : `<button class="btn" style="flex: 1; padding: 6px;" disabled>Active</button>`}
@@ -566,11 +602,50 @@
       }
     }
 
+    async function autoRotatePool() {
+      try {
+        const res = await fetch('/api/auth/rotate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ threshold: 90.0 })
+        });
+        const data = await res.json();
+        if (data.rotated) {
+          alert(`Auto-Rotation Successful!\nRotated From: ${data.rotation.from}\nRotated To: ${data.rotation.to}\nReason: ${data.rotation.reason}`);
+        } else {
+          alert(data.message || 'Active account is healthy. No rotation needed.');
+        }
+        fetchAccounts();
+        fetchAuditLogs();
+      } catch (e) {
+        alert('Auto-rotation request failed: ' + e);
+      }
+    }
+
+    async function syncCliCredentials() {
+      try {
+        const res = await fetch('/api/auth/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (data.report) {
+          alert(`CLI Synchronization:\nAction: ${data.report.action_taken}\nActive Account: ${data.report.active_account_name}`);
+        }
+        fetchAccounts();
+        fetchAuditLogs();
+      } catch (e) {
+        alert('CLI sync request failed: ' + e);
+      }
+    }
+
     function openAddModal() { document.getElementById('add-modal').style.display = 'flex'; }
     function closeAddModal() { document.getElementById('add-modal').style.display = 'none'; }
 
     async function submitAddAccount() {
       const name = document.getElementById('add-name').value.trim();
+      const email = document.getElementById('add-email').value.trim() || null;
+      const plan_tier = document.getElementById('add-tier').value;
       const provider = document.getElementById('add-provider').value;
       const key = document.getElementById('add-key').value.trim();
       const model = document.getElementById('add-model').value.trim() || null;
@@ -587,7 +662,7 @@
         const res = await fetch('/api/accounts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, provider, key, model, url, quota })
+          body: JSON.stringify({ name, email, plan_tier, provider, key, model, url, quota })
         });
         if (!res.ok) {
           const err = await res.json();

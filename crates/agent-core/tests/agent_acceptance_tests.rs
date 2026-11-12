@@ -1,4 +1,5 @@
 use agent_core::account::{AccountProfile, AccountStore};
+use agent_core::auth::AuthCredentialManager;
 use agent_core::gateway::{
     format_claude_response, format_gemini_response, format_openai_response,
     translate_claude_request, translate_gemini_request, translate_openai_request,
@@ -230,4 +231,74 @@ fn t51_account_quota_and_token_tracking() {
     assert_eq!(updated.error_count, 1);
     assert!(updated.is_quota_exceeded());
     assert!(!updated.is_usable());
+}
+
+#[test]
+fn t52_auth_pool_ranking_and_health_scoring() {
+    let mut store = AccountStore::new();
+    let acc1 = AccountProfile::new("Claude-Enterprise", "claude", "sk-ant-ent", None, None, Some(500000))
+        .with_email("team@corp.com")
+        .with_plan_tier("Enterprise");
+    let acc2 = AccountProfile::new("OpenAI-Pro", "openai", "sk-proj-pro", None, None, Some(100000))
+        .with_email("dev@corp.com")
+        .with_plan_tier("Pro");
+
+    store.add_account(acc1).unwrap();
+    store.add_account(acc2).unwrap();
+
+    // Record some usage and errors on OpenAI
+    store.record_usage("OpenAI-Pro", 85000, true).unwrap();
+
+    let ranking = store.rank_accounts();
+    assert_eq!(ranking.len(), 2);
+    assert_eq!(ranking[0].name, "Claude-Enterprise");
+    assert!(ranking[0].health_score >= 95);
+    assert!(ranking[1].health_score < ranking[0].health_score);
+    assert_eq!(ranking[0].plan_tier, "Enterprise");
+}
+
+#[test]
+fn t53_auth_atomic_switch_pre_backup() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let backup_dir = temp_dir.path().join(".agy").join("auth_backups");
+    let dummy_cli_token = temp_dir.path().join("dummy_token.json");
+
+    // Seed dummy live credentials
+    std::fs::write(&dummy_cli_token, "original-live-token-secret").unwrap();
+
+    // Verify backup creation
+    let backup = AuthCredentialManager::backup_token_file(&dummy_cli_token, &backup_dir, "test-backup").unwrap();
+    assert!(backup.path.exists());
+    assert_eq!(backup.file_size, "original-live-token-secret".len() as u64);
+
+    // Atomically overwrite dummy token
+    AuthCredentialManager::write_token_atomically(&dummy_cli_token, "switched-token-new").unwrap();
+    assert_eq!(std::fs::read_to_string(&dummy_cli_token).unwrap(), "switched-token-new");
+
+    // Verify restore works cleanly
+    AuthCredentialManager::write_token_atomically(&dummy_cli_token, &std::fs::read_to_string(&backup.path).unwrap()).unwrap();
+    assert_eq!(std::fs::read_to_string(&dummy_cli_token).unwrap(), "original-live-token-secret");
+}
+
+#[test]
+fn t54_auth_quota_aware_auto_rotation() {
+    let mut store = AccountStore::new();
+    let mut primary = AccountProfile::new("ActiveNearExhaustion", "openai", "sk-p1", None, None, Some(1000));
+    primary.is_active = true;
+    primary.quota_used = 950; // 95% used (> 90% threshold)
+
+    let standby = AccountProfile::new("HealthyStandby", "claude", "sk-s1", None, None, Some(100000))
+        .with_plan_tier("Pro");
+
+    store.accounts.push(primary);
+    store.accounts.push(standby);
+
+    // Check should_rotate at 90% threshold
+    assert!(store.should_rotate(90.0).is_some());
+
+    // Trigger auto-rotation
+    let rot = store.auto_rotate(90.0).unwrap().unwrap();
+    assert_eq!(rot.from, "ActiveNearExhaustion");
+    assert_eq!(rot.to, "HealthyStandby");
+    assert_eq!(store.get_active_account().unwrap().name, "HealthyStandby");
 }
